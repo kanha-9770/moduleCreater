@@ -1,0 +1,194 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model FormModule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  icon        String?
+  color       String?
+  settings    Json     @default("{}")
+  forms       Form[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("form_modules")
+}
+
+model Form {
+  id                String        @id @default(cuid())
+  moduleId          String
+  module            FormModule    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  settings          Json          @default("{}")
+  sections          FormSection[]
+  records           FormRecord[]
+  events            FormEvent[]
+  isPublished       Boolean       @default(false)
+  publishedAt       DateTime?
+  formUrl           String?
+  allowAnonymous    Boolean       @default(true)
+  requireLogin      Boolean       @default(false)
+  maxSubmissions    Int?
+  submissionMessage String?
+  conditional       Json?
+  styling           Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("forms")
+}
+
+model FormSection {
+  id          String     @id @default(cuid())
+  formId      String
+  form        Form       @relation(fields: [formId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  order       Int        @default(0)
+  columns     Int        @default(1)
+  visible     Boolean    @default(true)
+  collapsible Boolean    @default(false)
+  collapsed   Boolean    @default(false)
+  conditional Json?
+  styling     Json?
+  fields      FormField[]
+  subforms    Subform[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("form_sections")
+}
+
+model FormField {
+  id            String       @id @default(cuid())
+  sectionId     String?
+  section       FormSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subformId     String?
+  subform       Subform?     @relation(fields: [subformId], references: [id], onDelete: Cascade)
+  type          String
+  label         String
+  placeholder   String?
+  description   String?
+  defaultValue  String?
+  options       Json         @default("[]")
+  validation    Json         @default("{}")
+  visible       Boolean      @default(true)
+  readonly      Boolean      @default(false)
+  width         String       @default("full")
+  order         Int          @default(0)
+  conditional   Json?
+  styling       Json?
+  properties    Json?
+  formula       String?
+  rollup        Json?
+  lookup        Json?
+  // Lookup configuration fields stored directly
+  sourceModule  String?
+  sourceForm    String?
+  displayField  String?
+  valueField    String?
+  multiple      Boolean?
+  searchable    Boolean?
+  filters       Json?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("form_fields")
+}
+
+model Subform {
+  id        String      @id @default(cuid())
+  sectionId String
+  section   FormSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  name      String
+  title     String
+  order     Int         @default(0)
+  fields    FormField[]
+  records   SubformRecord[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@map("subforms")
+}
+
+model SubformRecord {
+  id        String   @id @default(cuid())
+  subformId String
+  subform   Subform  @relation(fields: [subformId], references: [id], onDelete: Cascade)
+  data      Json     @default("{}")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subform_records")
+}
+
+model FormRecord {
+  id           String   @id @default(cuid())
+  formId       String
+  form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  recordData   Json     @default("{}") @db.JsonB
+  status       String   @default("submitted")
+  submittedBy  String?
+  submittedAt  DateTime @default(now())
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("form_records")
+}
+
+model FormEvent {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  eventType String
+  payload   Json     @default("{}")
+  sessionId String?
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@map("form_events")
+}
+
+model FieldType {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  label        String
+  category     String
+  icon         String
+  description  String?
+  defaultProps Json    @default("{}")
+  active       Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("field_types")
+}
+
+model LookupSource {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // 'static', 'module', 'form', 'api'
+  sourceId    String?  // moduleId or formId for dynamic sources
+  data        Json     @default("[]")
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("lookup_sources")
+}
