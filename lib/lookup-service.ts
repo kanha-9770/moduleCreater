@@ -1,736 +1,561 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
-const prisma = new PrismaClient();
+interface LookupOptions {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
 
-export interface LookupSource {
+interface LookupSourceData {
   id: string;
   name: string;
-  description?: string;
-  type: "form" | "module" | "static";
-  icon?: string;
-  recordCount?: number;
-  config?: any;
-}
-
-export interface LookupOption {
-  id: string;
-  label: string;
-  value: string;
-  storeValue: any;
-  description?: string;
-  data?: any;
-}
-
-export interface FieldMapping {
-  display: string;
-  value: string;
-  store: string;
-  description?: string;
-}
-
-interface LookupFieldConfig {
-  key: string;
+  description?: string | null;
   type: string;
-  config?: {
-    lookupSource?: string;
-  };
+  recordCount: number;
+  icon: string;
 }
 
 export class LookupService {
-  // New method to create cross-form records for lookup fields
-  static async createCrossFormRecords(formId: string, recordData: any, submittedBy: string | null): Promise<void> {
-    try {
-      console.log(`Creating cross-form records for form: ${formId}`);
+  private staticSources: Record<string, any[]> = {
+    countries: [
+      { id: "US", name: "United States", code: "US", description: "United States of America" },
+      { id: "CA", name: "Canada", code: "CA", description: "Canada" },
+      { id: "UK", name: "United Kingdom", code: "UK", description: "United Kingdom" },
+      { id: "DE", name: "Germany", code: "DE", description: "Germany" },
+      { id: "FR", name: "France", code: "FR", description: "France" },
+      { id: "JP", name: "Japan", code: "JP", description: "Japan" },
+      { id: "AU", name: "Australia", code: "AU", description: "Australia" },
+      { id: "IN", name: "India", code: "IN", description: "India" },
+      { id: "BR", name: "Brazil", code: "BR", description: "Brazil" },
+      { id: "CN", name: "China", code: "CN", description: "China" },
+    ],
+    currencies: [
+      { id: "USD", name: "US Dollar", code: "USD", symbol: "$", description: "United States Dollar" },
+      { id: "EUR", name: "Euro", code: "EUR", symbol: "€", description: "Euro" },
+      { id: "GBP", name: "British Pound", code: "GBP", symbol: "£", description: "British Pound Sterling" },
+      { id: "JPY", name: "Japanese Yen", code: "JPY", symbol: "¥", description: "Japanese Yen" },
+      { id: "CAD", name: "Canadian Dollar", code: "CAD", symbol: "C$", description: "Canadian Dollar" },
+      { id: "AUD", name: "Australian Dollar", code: "AUD", symbol: "A$", description: "Australian Dollar" },
+      { id: "CHF", name: "Swiss Franc", code: "CHF", symbol: "CHF", description: "Swiss Franc" },
+      { id: "CNY", name: "Chinese Yuan", code: "CNY", symbol: "¥", description: "Chinese Yuan" },
+    ],
+    priorities: [
+      { id: "low", name: "Low", value: 1, color: "green", description: "Low priority" },
+      { id: "medium", name: "Medium", value: 2, color: "yellow", description: "Medium priority" },
+      { id: "high", name: "High", value: 3, color: "orange", description: "High priority" },
+      { id: "critical", name: "Critical", value: 4, color: "red", description: "Critical priority" },
+    ],
+    statuses: [
+      { id: "draft", name: "Draft", color: "gray", description: "Draft status" },
+      { id: "pending", name: "Pending", color: "yellow", description: "Pending approval" },
+      { id: "approved", name: "Approved", color: "green", description: "Approved" },
+      { id: "rejected", name: "Rejected", color: "red", description: "Rejected" },
+      { id: "completed", name: "Completed", color: "blue", description: "Completed" },
+      { id: "cancelled", name: "Cancelled", color: "gray", description: "Cancelled" },
+    ],
+    departments: [
+      { id: "hr", name: "Human Resources", code: "HR", description: "Human Resources Department" },
+      { id: "it", name: "Information Technology", code: "IT", description: "IT Department" },
+      { id: "finance", name: "Finance", code: "FIN", description: "Finance Department" },
+      { id: "marketing", name: "Marketing", code: "MKT", description: "Marketing Department" },
+      { id: "sales", name: "Sales", code: "SAL", description: "Sales Department" },
+      { id: "operations", name: "Operations", code: "OPS", description: "Operations Department" },
+      { id: "legal", name: "Legal", code: "LEG", description: "Legal Department" },
+      { id: "support", name: "Customer Support", code: "SUP", description: "Customer Support" },
+    ],
+  };
 
-      // Fetch the form to get its configuration
-      const form = await prisma.form.findUnique({
-        where: { id: formId },
-        select: {
-          id: true,
-          settings: true, // Assuming lookup field config is stored in settings
+  async seedStaticSources(): Promise<void> {
+    const staticSourceConfigs = [
+      { id: "lookup_countries", name: "Countries", staticSourceName: "countries", description: "World countries with codes and regions", data: this.staticSources.countries },
+      { id: "lookup_currencies", name: "Currencies", staticSourceName: "currencies", description: "World currencies with symbols", data: this.staticSources.currencies },
+      { id: "lookup_priorities", name: "Priorities", staticSourceName: "priorities", description: "Task and project priorities", data: this.staticSources.priorities },
+      { id: "lookup_statuses", name: "Status Options", staticSourceName: "statuses", description: "Common status values", data: this.staticSources.statuses },
+      { id: "lookup_departments", name: "Departments", staticSourceName: "departments", description: "Common company departments", data: this.staticSources.departments },
+    ];
+
+    for (const config of staticSourceConfigs) {
+      await prisma.lookupSource.upsert({
+        where: { id: config.id },
+        update: {
+          name: config.name,
+          type: "static",
+          staticSourceName: config.staticSourceName,
+          description: config.description,
+          data: config.data as Prisma.JsonValue,
+          active: true,
+          updatedAt: new Date(),
+        },
+        create: {
+          id: config.id,
+          name: config.name,
+          type: "static",
+          staticSourceName: config.staticSourceName,
+          description: config.description,
+          data: config.data as Prisma.JsonValue,
+          active: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
       });
+    }
+    console.log("Static lookup sources seeded.");
+  }
 
-      if (!form) {
-        console.warn(`Form not found: ${formId}`);
-        return;
+  async getData(sourceId: string, options: LookupOptions = {}): Promise<any[]> {
+    const { search = "", limit = 50, offset = 0 } = options;
+
+    console.log(`LookupService.getData called with:`, { sourceId, search, limit, offset });
+
+    try {
+      const lookupSource = await prisma.lookupSource.findUnique({
+        where: { id: sourceId },
+        include: { sourceModule: true, sourceForm: true },
+      });
+
+      if (!lookupSource) {
+        console.log(`No lookup source found for ID: ${sourceId}`);
+        return [];
       }
 
-      // Extract lookup fields from settings (assuming settings contains a fields array)
-      const settings = form.settings as { fields?: LookupFieldConfig[] } | null;
-      const lookupFields: LookupFieldConfig[] =
-        settings?.fields?.filter((field) => field.type === "lookup" && field.config?.lookupSource) || [];
+      if (lookupSource.type === "static") {
+        console.log(`Using static data for source: ${lookupSource.staticSourceName}`);
+        let data = (lookupSource.data as any[]) || [];
 
-      if (!lookupFields.length) {
-        console.log(`No lookup fields found for form: ${formId}`);
-        return;
+        if (search) {
+          const searchLower = search.toLowerCase();
+          data = data.filter((item) =>
+            Object.values(item).some((value) => value != null && String(value).toLowerCase().includes(searchLower))
+          );
+        }
+
+        const result = data.slice(offset, offset + limit).map((item) => ({
+          record_id: item.id || String(Math.random()),
+          ...item,
+          type: item.type || "text",
+        }));
+        console.log(`Returning ${result.length} static records`);
+        return result;
       }
 
-      // Process each lookup field
-      for (const field of lookupFields) {
-        const lookupSourceId = field.config?.lookupSource;
-        const fieldKey = field.key;
-
-        if (!lookupSourceId) {
-          console.log(`Skipping lookup field ${fieldKey}: no source provided`);
-          continue;
-        }
-
-        const value = recordData[fieldKey];
-        if (!value) {
-          console.log(`Skipping lookup field ${fieldKey}: no value provided`);
-          continue;
-        }
-
-        // Handle form-based lookup sources
-        if (lookupSourceId.startsWith("form_")) {
-          const targetFormId = lookupSourceId.replace("form_", "");
-
-          // Create a cross-reference record in the target form
-          await prisma.formRecord.create({
-            data: {
-              formId: targetFormId,
-              recordData: {
-                [fieldKey]: value, // Store the lookup value
-                sourceFormId: formId, // Reference the source form
-                sourceRecordId: recordData.id || null, // Reference the source record (if available)
-              },
-              submittedBy: submittedBy || "anonymous",
-              submittedAt: new Date(),
+      if (lookupSource.type === "form" && lookupSource.sourceFormId) {
+        const form = await prisma.form.findUnique({
+          where: { id: lookupSource.sourceFormId },
+          include: {
+            records: {
+              take: limit,
+              skip: offset,
+              orderBy: { createdAt: "desc" },
             },
+          },
+        });
+
+        if (form) {
+          console.log(`Found form: ${form.name} with ${form.records.length} records`);
+          const records = form.records.map((record) => {
+            const recordData = record.recordData as any;
+            const transformedData: any = {
+              record_id: record.id,
+              form_id: form.id,
+              _recordId: record.id,
+              _formId: form.id,
+              _formName: form.name,
+              createdAt: record.createdAt.toISOString(),
+              updatedAt: record.updatedAt.toISOString(),
+            };
+
+            Object.entries(recordData).forEach(([key, value]: [string, any]) => {
+              const fieldType = value?.type || "text";
+              let fieldValue = value?.value;
+
+              if (fieldType === "number" && fieldValue != null) {
+                fieldValue = Number(fieldValue);
+                if (isNaN(fieldValue)) fieldValue = value.value;
+              } else if (fieldType === "datetime" && fieldValue) {
+                try {
+                  fieldValue = new Date(fieldValue).toISOString();
+                } catch {
+                  fieldValue = value.value;
+                }
+              } else if (fieldType === "date" && fieldValue) {
+                try {
+                  fieldValue = new Date(fieldValue).toISOString().split("T")[0];
+                } catch {
+                  fieldValue = value.value;
+                }
+              } else if (fieldType === "checkbox") {
+                fieldValue = Boolean(fieldValue);
+              } else if (fieldType === "tel" || fieldType === "email" || fieldType === "url") {
+                fieldValue = String(fieldValue);
+              }
+
+              let parsedOptions: any = null;
+              let parsedValidation: any = null;
+              if (value?.options != null) {
+                try {
+                  parsedOptions = typeof value.options === "string" ? JSON.parse(value.options) : value.options;
+                } catch {
+                  parsedOptions = [];
+                }
+              }
+              if (value?.validation != null) {
+                try {
+                  parsedValidation = typeof value.validation === "string" ? JSON.parse(value.validation) : value.validation;
+                } catch {
+                  parsedValidation = {};
+                }
+              }
+
+              transformedData[key] = {
+                field_id: value?.fieldId || key,
+                field_value: fieldValue,
+                field_label: value?.label || key,
+                field_type: fieldType,
+                field_section_id: value?.sectionId || null,
+                field_options: parsedOptions,
+                field_validation: parsedValidation,
+              };
+            });
+
+            if (search) {
+              const searchLower = search.toLowerCase();
+              const matchesSearch = Object.values(transformedData).some((field: any) =>
+                field.field_value != null && typeof field.field_value === "string"
+                  ? field.field_value.toLowerCase().includes(searchLower)
+                  : false
+              );
+              return matchesSearch ? transformedData : null;
+            }
+            return transformedData;
           });
 
-          console.log(`Created cross-form record for field ${fieldKey} in form ${targetFormId}`);
+          const filteredRecords = records.filter((record): record is NonNullable<typeof record> => record !== null);
+          console.log(`Processed ${filteredRecords.length} form records`);
+          return filteredRecords;
         }
       }
-    } catch (error) {
-      console.error("Error creating cross-form records:", error);
-      throw error; // Let the caller handle the error
+
+      if (lookupSource.type === "module" && lookupSource.sourceModuleId) {
+        const module = await prisma.formModule.findUnique({
+          where: { id: lookupSource.sourceModuleId },
+          include: {
+            forms: {
+              include: {
+                records: {
+                  take: Math.floor(limit / 10),
+                  orderBy: { createdAt: "desc" },
+                },
+              },
+            },
+          },
+        });
+
+        if (module) {
+          console.log(`Found module: ${module.name} with ${module.forms.length} forms`);
+          const records: any[] = [];
+
+          module.forms.forEach((form) => {
+            form.records.forEach((record) => {
+              const recordData = record.recordData as any;
+              const transformedData: any = {
+                record_id: record.id,
+                form_id: form.id,
+                _recordId: record.id,
+                _formId: form.id,
+                _formName: form.name,
+                _moduleId: module.id,
+                _moduleName: module.name,
+                createdAt: record.createdAt.toISOString(),
+                updatedAt: record.updatedAt.toISOString(),
+              };
+
+              Object.entries(recordData).forEach(([key, value]: [string, any]) => {
+                const fieldType = value?.type || "text";
+                let fieldValue = value?.value;
+
+                if (fieldType === "number" && fieldValue != null) {
+                  fieldValue = Number(fieldValue);
+                  if (isNaN(fieldValue)) fieldValue = value.value;
+                } else if (fieldType === "datetime" && fieldValue) {
+                  try {
+                    fieldValue = new Date(fieldValue).toISOString();
+                  } catch {
+                    fieldValue = value.value;
+                  }
+                } else if (fieldType === "date" && fieldValue) {
+                  try {
+                    fieldValue = new Date(fieldValue).toISOString().split("T")[0];
+                  } catch {
+                    fieldValue = value.value;
+                  }
+                } else if (fieldType === "checkbox") {
+                  fieldValue = Boolean(fieldValue);
+                } else if (fieldType === "tel" || fieldType === "email" || fieldType === "url") {
+                  fieldValue = String(fieldValue);
+                }
+
+                let parsedOptions: any = null;
+                let parsedValidation: any = null;
+                if (value?.options != null) {
+                  try {
+                    parsedOptions = typeof value.options === "string" ? JSON.parse(value.options) : value.options;
+                  } catch {
+                    parsedOptions = [];
+                  }
+                }
+                if (value?.validation != null) {
+                  try {
+                    parsedValidation = typeof value.validation === "string" ? JSON.parse(value.validation) : value.validation;
+                  } catch {
+                    parsedValidation = {};
+                  }
+                }
+
+                transformedData[key] = {
+                  field_id: value?.fieldId || key,
+                  field_value: fieldValue,
+                  field_label: value?.label || key,
+                  field_type: fieldType,
+                  field_section_id: value?.sectionId || null,
+                  field_options: parsedOptions,
+                  field_validation: parsedValidation,
+                };
+              });
+
+              if (search) {
+                const searchLower = search.toLowerCase();
+                const matchesSearch = Object.values(transformedData).some((field: any) =>
+                  field.field_value != null && typeof field.field_value === "string"
+                    ? field.field_value.toLowerCase().includes(searchLower)
+                    : false
+                );
+                if (matchesSearch) records.push(transformedData);
+              } else {
+                records.push(transformedData);
+              }
+            });
+          });
+
+          console.log(`Processed ${records.length} module records`);
+          return records.slice(0, limit);
+        }
+      }
+
+      console.log(`No data found for source: ${sourceId}`);
+      return [];
+    } catch (error: any) {
+      console.log("Error in LookupService.getData:", { error: error.message, stack: error.stack });
+      throw error;
     }
   }
 
-  static async getLookupSources(): Promise<LookupSource[]> {
-    try {
-      const sources: LookupSource[] = [];
+  async getFields(sourceId: string): Promise<string[]> {
+    console.log(`LookupService.getFields called for source: ${sourceId}`);
 
-      // Get modules with their forms as potential lookup sources
+    try {
+      const lookupSource = await prisma.lookupSource.findUnique({
+        where: { id: sourceId },
+        include: { sourceForm: { include: { records: { take: 1, orderBy: { createdAt: "desc" } } } }, sourceModule: true },
+      });
+
+      if (!lookupSource) {
+        console.log(`No lookup source found for ID: ${sourceId}`);
+        return [];
+      }
+
+      if (lookupSource.type === "static") {
+        const data = (lookupSource.data as any[]) || [];
+        const sampleData = data[0];
+        if (sampleData) {
+          const fields = Object.keys(sampleData);
+          console.log(`Static source ${sourceId} fields:`, fields);
+          return fields;
+        }
+        return [];
+      }
+
+      if (lookupSource.type === "form" && lookupSource.sourceForm) {
+        const form = lookupSource.sourceForm;
+        const fields = new Set<string>();
+
+        if (form.records.length > 0) {
+          const recordData = form.records[0].recordData as any;
+          if (recordData && typeof recordData === "object") {
+            Object.entries(recordData).forEach(([key, value]: [string, any]) => {
+              const fieldLabel = value?.label || key;
+              fields.add(fieldLabel);
+            });
+          }
+        }
+
+        fields.add("id");
+        fields.add("name");
+        fields.add("title");
+        fields.add("description");
+        fields.add("createdAt");
+        fields.add("updatedAt");
+
+        const fieldArray = Array.from(fields);
+        console.log(`Form ${sourceId} fields:`, fieldArray);
+        return fieldArray;
+      }
+
+      if (lookupSource.type === "module" && lookupSource.sourceModuleId) {
+        const module = await prisma.formModule.findUnique({
+          where: { id: lookupSource.sourceModuleId },
+          include: {
+            forms: {
+              include: {
+                records: {
+                  take: 1,
+                  orderBy: { createdAt: "desc" },
+                },
+              },
+            },
+          },
+        });
+
+        if (module) {
+          const fields = new Set<string>();
+          module.forms.forEach((form) => {
+            if (form.records.length > 0) {
+              const recordData = form.records[0].recordData as any;
+              if (recordData && typeof recordData === "object") {
+                Object.entries(recordData).forEach(([key, value]: [string, any]) => {
+                  const fieldLabel = value?.label || key;
+                  fields.add(fieldLabel);
+                });
+              }
+            }
+          });
+
+          fields.add("id");
+          fields.add("name");
+          fields.add("title");
+          fields.add("description");
+          fields.add("createdAt");
+          fields.add("updatedAt");
+
+          const fieldArray = Array.from(fields);
+          console.log(`Module ${sourceId} fields:`, fieldArray);
+          return fieldArray;
+        }
+      }
+
+      console.log(`No fields found for source: ${sourceId}`);
+      return [];
+    } catch (error) {
+      console.error("Error in LookupService.getFields:", error);
+      throw error;
+    }
+  }
+
+  static async getLookupSources(): Promise<LookupSourceData[]> {
+    try {
+      const sources: LookupSourceData[] = [];
+
+      const staticSources = await prisma.lookupSource.findMany({
+        where: { type: "static", active: true },
+      });
+
+      sources.push(
+        ...staticSources.map((source) => ({
+          id: source.id,
+          name: source.name,
+          description: source.description,
+          type: source.type,
+          recordCount: (source.data as any[])?.length || 0,
+          icon: source.staticSourceName === "countries" ? "🌍" :
+                source.staticSourceName === "currencies" ? "💰" :
+                source.staticSourceName === "priorities" ? "⚡" :
+                source.staticSourceName === "statuses" ? "🔄" :
+                source.staticSourceName === "departments" ? "🏢" : "📋",
+        }))
+      );
+
       const modules = await prisma.formModule.findMany({
         include: {
           forms: {
             include: {
               _count: {
-                select: {
-                  records: true,
-                },
+                select: { records: true },
               },
             },
           },
         },
       });
 
-      // Add modules as sources (for backward compatibility)
       for (const module of modules) {
-        const totalRecords = module.forms.reduce((sum, form) => sum + form._count.records, 0);
+        const totalRecords = module.forms.reduce((sum: number, form: any) => sum + form._count.records, 0);
+
+        const moduleSource = await prisma.lookupSource.upsert({
+          where: { id: `module_${module.id}` },
+          update: {
+            name: module.name,
+            type: "module",
+            description: module.description,
+            active: true,
+            updatedAt: new Date(),
+          },
+          create: {
+            id: `module_${module.id}`,
+            name: module.name,
+            type: "module",
+            sourceModuleId: module.id,
+            description: module.description,
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
 
         sources.push({
-          id: module.id,
-          name: module.name,
-          description: module.description || `Module with ${module.forms.length} forms`,
-          type: "module",
+          id: moduleSource.id,
+          name: moduleSource.name,
+          description: moduleSource.description,
+          type: moduleSource.type,
           recordCount: totalRecords,
           icon: "📁",
         });
 
-        // Add individual forms as lookup sources
         for (const form of module.forms) {
+          const formSource = await prisma.lookupSource.upsert({
+            where: { id: `form_${form.id}` },
+            update: {
+              name: `${form.name} (${module.name})`,
+              type: "form",
+              description: `Records from ${form.name} form in ${module.name} module`,
+              active: true,
+              updatedAt: new Date(),
+            },
+            create: {
+              id: `form_${form.id}`,
+              name: `${form.name} (${module.name})`,
+              type: "form",
+              sourceFormId: form.id,
+              description: `Records from ${form.name} form in ${module.name} module`,
+              active: true,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+
           sources.push({
-            id: `form_${form.id}`,
-            name: `${form.name} (${module.name})`,
-            description: `Records from ${form.name} form in ${module.name} module`,
-            type: "form",
+            id: formSource.id,
+            name: formSource.name,
+            description: formSource.description,
+            type: formSource.type,
             recordCount: form._count.records,
             icon: "📄",
           });
         }
       }
 
-      // Add comprehensive built-in static sources
-      sources.push(
-        {
-          id: "countries",
-          name: "Countries",
-          description: "World countries with codes and regions",
-          type: "static",
-          recordCount: 195,
-          icon: "🌍",
-        },
-        {
-          id: "currencies",
-          name: "Currencies",
-          description: "World currencies with symbols",
-          type: "static",
-          recordCount: 168,
-          icon: "💰",
-        },
-        {
-          id: "timezones",
-          name: "Time Zones",
-          description: "World time zones with offsets",
-          type: "static",
-          recordCount: 424,
-          icon: "🕐",
-        },
-        {
-          id: "languages",
-          name: "Languages",
-          description: "Programming and spoken languages",
-          type: "static",
-          recordCount: 150,
-          icon: "🗣️",
-        },
-        {
-          id: "departments",
-          name: "Departments",
-          description: "Common company departments",
-          type: "static",
-          recordCount: 25,
-          icon: "🏢",
-        },
-        {
-          id: "job_titles",
-          name: "Job Titles",
-          description: "Common job titles and positions",
-          type: "static",
-          recordCount: 100,
-          icon: "💼",
-        },
-        {
-          id: "industries",
-          name: "Industries",
-          description: "Business industry categories",
-          type: "static",
-          recordCount: 50,
-          icon: "🏭",
-        },
-        {
-          id: "skills",
-          name: "Skills",
-          description: "Technical and soft skills",
-          type: "static",
-          recordCount: 200,
-          icon: "🎯",
-        },
-        {
-          id: "education_levels",
-          name: "Education Levels",
-          description: "Academic qualification levels",
-          type: "static",
-          recordCount: 15,
-          icon: "🎓",
-        },
-        {
-          id: "company_sizes",
-          name: "Company Sizes",
-          description: "Employee count ranges",
-          type: "static",
-          recordCount: 8,
-          icon: "📊",
-        },
-        {
-          id: "priorities",
-          name: "Priorities",
-          description: "Task and project priorities",
-          type: "static",
-          recordCount: 5,
-          icon: "⚡",
-        },
-        {
-          id: "statuses",
-          name: "Status Options",
-          description: "Common status values",
-          type: "static",
-          recordCount: 10,
-          icon: "🔄",
-        }
-      );
-
       return sources;
     } catch (error) {
       console.error("Error fetching lookup sources:", error);
       return [];
     }
-  }
-
-  static async getSourceFields(sourceId: string): Promise<string[]> {
-    try {
-      console.log("Getting source fields for:", sourceId);
-
-      // Handle static sources
-      if (this.isStaticSource(sourceId)) {
-        return this.getStaticSourceFields(sourceId);
-      }
-
-      // Handle form-specific lookups
-      if (sourceId.startsWith("form_")) {
-        const formId = sourceId.replace("form_", "");
-        return this.getFormSourceFields(formId);
-      }
-
-      // Handle module sources
-      return this.getModuleSourceFields(sourceId);
-    } catch (error) {
-      console.error("Error fetching source fields:", error);
-      return ["id", "name", "title", "label", "description", "email"];
-    }
-  }
-
-  static async getLookupOptions(
-    sourceId: string,
-    fieldMapping: FieldMapping,
-    searchTerm?: string
-  ): Promise<LookupOption[]> {
-    try {
-      console.log("Getting lookup options for source:", sourceId, "with mapping:", fieldMapping);
-
-      // Handle static sources
-      if (this.isStaticSource(sourceId)) {
-        return this.getStaticLookupOptions(sourceId, fieldMapping, searchTerm);
-      }
-
-      // Handle form-specific lookups
-      if (sourceId.startsWith("form_")) {
-        const formId = sourceId.replace("form_", "");
-        return this.getFormLookupOptions(formId, fieldMapping, searchTerm);
-      }
-
-      // Handle module sources (all forms in module)
-      return this.getModuleLookupOptions(sourceId, fieldMapping, searchTerm);
-    } catch (error) {
-      console.error("Error fetching lookup options:", error);
-      return [];
-    }
-  }
-
-  // Enhanced field value extraction with better fallback logic
-  private static extractFieldValue(recordData: any, fieldPath: string): any {
-    if (!recordData || !fieldPath) return null;
-
-    // Handle system fields
-    if (fieldPath === "id" && recordData.id) return recordData.id;
-    if (fieldPath === "createdAt" && recordData.createdAt) return recordData.createdAt;
-    if (fieldPath === "updatedAt" && recordData.updatedAt) return recordData.updatedAt;
-
-    // Handle nested field paths (e.g., "user.name")
-    const parts = fieldPath.split(".");
-    let value = recordData;
-
-    for (const part of parts) {
-      if (value && typeof value === "object" && part in value) {
-        value = value[part];
-      } else {
-        // Try case-insensitive matching
-        const keys = Object.keys(value || {});
-        const matchingKey = keys.find((key) => key.toLowerCase() === part.toLowerCase());
-        if (matchingKey) {
-          value = value[matchingKey];
-        } else {
-          return null;
-        }
-      }
-    }
-
-    // Clean up the value
-    if (value === null || value === undefined) return null;
-    if (typeof value === "string") return value.trim();
-    if (typeof value === "number" || typeof value === "boolean") return value;
-    if (Array.isArray(value)) return value.join(", ");
-    if (typeof value === "object") return JSON.stringify(value);
-
-    return String(value);
-  }
-
-  // Get lookup options from a specific form with enhanced field mapping
-  private static async getFormLookupOptions(formId: string, fieldMapping: FieldMapping, searchTerm = "") {
-    try {
-      const form = await prisma.form.findUnique({
-        where: { id: formId },
-        include: {
-          records: {
-            take: 100, // Limit for performance
-            orderBy: { submittedAt: "desc" },
-          },
-          module: true,
-        },
-      });
-
-      if (!form) {
-        console.log("Form not found:", formId);
-        return [];
-      }
-
-      console.log(`Processing starting akash ${form.records.length} records from form: ${form.name}`);
-
-      const options: LookupOption[] = [];
-      const mapping = fieldMapping || { display: "name", value: "id", store: "name" };
-
-      for (const record of form.records) {
-        const recordData = record.recordData as any;
-
-        if (!recordData || typeof recordData !== "object") {
-          console.log("Skipping invalid record data:", record.id);
-          continue;
-        }
-
-        // Extract values using enhanced field extraction
-        const displayValue = this.extractFieldValue(recordData, mapping.display);
-        const valueField = this.extractFieldValue(recordData, mapping.value) || record.id;
-        const storeValue = this.extractFieldValue(recordData, mapping.store) || displayValue;
-        const descriptionValue = mapping.description ? this.extractFieldValue(recordData, mapping.description) : null;
-
-        // Create option with fallback display value
-        const option: LookupOption = {
-          id: record.id,
-          label: displayValue || `Record Not Exists ${record.id.slice(-8)}`,
-          value: String(valueField),
-          storeValue: storeValue || displayValue,
-          description: descriptionValue || `From ${form.name}`,
-          data: recordData,
-        };
-
-        // Apply search filter
-        if (searchTerm) {
-          const searchLower = searchTerm.toLowerCase();
-          const matchesSearch =
-            option.label?.toLowerCase().includes(searchLower) ||
-            option.description?.toLowerCase().includes(searchLower) ||
-            String(option.storeValue)?.toLowerCase().includes(searchLower);
-
-          if (matchesSearch) {
-            options.push(option);
-          }
-        } else {
-          options.push(option);
-        }
-      }
-
-      console.log(`Generated ${options.length} lookup options from form`);
-      return options;
-    } catch (error) {
-      console.error("Error fetching form lookup options:", error);
-      return [];
-    }
-  }
-
-  // Get lookup options from all forms in a module
-  private static async getModuleLookupOptions(moduleId: string, fieldMapping: FieldMapping, searchTerm = "") {
-    try {
-      const module = await prisma.formModule.findUnique({
-        where: { id: moduleId },
-        include: {
-          forms: {
-            include: {
-              records: {
-                take: 50, // Limit per form for performance
-                orderBy: { submittedAt: "desc" },
-              },
-            },
-          },
-        },
-      });
-
-      if (!module) {
-        console.log("Module not found:", moduleId);
-        return [];
-      }
-
-      const options: LookupOption[] = [];
-      const mapping = fieldMapping || { display: "name", value: "id", store: "name" };
-
-      // Get records from all forms in the module
-      for (const form of module.forms) {
-        for (const record of form.records) {
-          const recordData = record.recordData as any;
-
-          if (!recordData || typeof recordData !== "object") continue;
-
-          // Extract values using enhanced field extraction
-          const displayValue = this.extractFieldValue(recordData, mapping.display);
-          const valueField = this.extractFieldValue(recordData, mapping.value) || record.id;
-          const storeValue = this.extractFieldValue(recordData, mapping.store) || displayValue;
-         
-
- const descriptionValue = mapping.description ? this.extractFieldValue(recordData, mapping.description) : null;
-
-          const option: LookupOption = {
-            id: record.id,
-            label: displayValue || `Record ${record.id.slice(-8)}`,
-            value: String(valueField),
-            storeValue: storeValue || displayValue,
-            description: descriptionValue || `From ${form.name}`,
-            data: recordData,
-          };
-
-          // Apply search filter
-          if (searchTerm) {
-            const searchLower = searchTerm.toLowerCase();
-            const matchesSearch =
-              option.label?.toLowerCase().includes(searchLower) ||
-              option.description?.toLowerCase().includes(searchLower) ||
-              String(option.storeValue)?.toLowerCase().includes(searchLower);
-
-            if (matchesSearch) {
-              options.push(option);
-            }
-          } else {
-            options.push(option);
-          }
-        }
-      }
-
-      console.log(`Generated ${options.length} lookup options from module`);
-      return options;
-    } catch (error) {
-      console.error("Error fetching module lookup options:", error);
-      return [];
-    }
-  }
-
-  // Get available fields for form sources with comprehensive field discovery
-  private static async getFormSourceFields(formId: string): Promise<string[]> {
-    try {
-      const form = await prisma.form.findUnique({
-        where: { id: formId },
-        include: {
-          records: {
-            take: 5, // Sample multiple records to get comprehensive field list
-            orderBy: { submittedAt: "desc" },
-          },
-        },
-      });
-
-      if (!form || !form.records.length) {
-        return ["id", "name", "title", "label", "description", "email", "createdAt", "updatedAt"];
-      }
-
-      const allFields = new Set<string>();
-
-      // Add system fields
-      allFields.add("id");
-      allFields.add("createdAt");
-      allFields.add("updatedAt");
-
-      // Collect fields from all sample records
-      for (const record of form.records) {
-        const recordData = record.recordData as any;
-        if (recordData && typeof recordData === "object") {
-          this.collectFieldsRecursively(recordData, "", allFields);
-        }
-      }
-
-      // Add common field names that might not be in sample data
-      const commonFields = ["name", "title", "label", "description", "email", "phone", "address", "company", "status"];
-      commonFields.forEach((field) => allFields.add(field));
-
-      const fieldArray = Array.from(allFields).sort();
-      console.log(`Found ${fieldArray.length} fields for form ${formId}:`, fieldArray);
-
-      return fieldArray;
-    } catch (error) {
-      console.error("Error fetching form source fields:", error);
-      return ["id", "name", "title", "label", "description", "email"];
-    }
-  }
-
-  // Recursively collect field names from nested objects
-  private static collectFieldsRecursively(obj: any, prefix: string, fields: Set<string>) {
-    if (!obj || typeof obj !== "object") return;
-
-    for (const [key, value] of Object.entries(obj)) {
-      const fieldName = prefix ? `${prefix}.${key}` : key;
-
-      // Add the field name
-      fields.add(fieldName);
-
-      // If it's a nested object (but not an array), recurse
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        this.collectFieldsRecursively(value, fieldName, fields);
-      }
-    }
-  }
-
-  // Get available fields for module sources
-  private static async getModuleSourceFields(moduleId: string): Promise<string[]> {
-    try {
-      const module = await prisma.formModule.findUnique({
-        where: { id: moduleId },
-        include: {
-          forms: {
-            include: {
-              records: {
-                take: 2, // Sample records from each form
-                orderBy: { submittedAt: "desc" },
-              },
-            },
-          },
-        },
-      });
-
-      if (!module) {
-        return ["id", "name", "title", "label", "description", "email"];
-      }
-
-      const allFields = new Set<string>();
-
-      // Add system fields
-      allFields.add("id");
-      allFields.add("createdAt");
-      allFields.add("updatedAt");
-
-      // Collect fields from all forms in the module
-      for (const form of module.forms) {
-        for (const record of form.records) {
-          const recordData = record.recordData as any;
-          if (recordData && typeof recordData === "object") {
-            this.collectFieldsRecursively(recordData, "", allFields);
-          }
-        }
-      }
-
-      // Add common fields
-      const commonFields = ["name", "title", "label", "description", "email", "phone", "address", "company", "status"];
-      commonFields.forEach((field) => allFields.add(field));
-
-      return Array.from(allFields).sort();
-    } catch (error) {
-      console.error("Error fetching module source fields:", error);
-      return ["id", "name", "title", "label", "description", "email"];
-    }
-  }
-
-  // Get available fields for static sources
-  private static getStaticSourceFields(sourceId: string): string[] {
-    const staticFieldMappings: Record<string, string[]> = {
-      countries: ["id", "name", "label", "code", "region"],
-      currencies: ["id", "name", "label", "code", "symbol"],
-      timezones: ["id", "name", "label", "offset"],
-      languages: ["id", "name", "label", "type"],
-      departments: ["id", "name", "label", "category"],
-      job_titles: ["id", "name", "label", "level"],
-      industries: ["id", "name", "label", "sector"],
-      skills: ["id", "name", "label", "category", "type"],
-      education_levels: ["id", "name", "label", "level"],
-      company_sizes: ["id", "name", "label", "min", "max"],
-      priorities: ["id", "name", "label", "level", "color"],
-      statuses: ["id", "name", "label", "color"],
-    };
-
-    return staticFieldMappings[sourceId] || ["id", "name", "label", "value"];
-  }
-
-  // Check if source is static
-  private static isStaticSource(sourceId: string): boolean {
-    const staticSources = [
-      "countries",
-      "currencies",
-      "timezones",
-      "languages",
-      "departments",
-      "job_titles",
-      "industries",
-      "skills",
-      "education_levels",
-      "company_sizes",
-      "priorities",
-      "statuses",
-    ];
-
-    return staticSources.includes(sourceId);
-  }
-
-  // Get static lookup options with field mapping
-  private static getStaticLookupOptions(sourceId: string, fieldMapping: FieldMapping, searchTerm = "") {
-    const mapping = fieldMapping || { display: "name", value: "id", store: "name" };
-
-    const staticData: Record<string, any[]> = {
-      countries: [
-        { id: "us", name: "United States", label: "United States", value: "us", code: "US", region: "North America" },
-        { id: "ca", name: "Canada", label: "Canada", value: "ca", code: "CA", region: "North America" },
-        { id: "uk", name: "United Kingdom", label: "United Kingdom", value: "uk", code: "GB", region: "Europe" },
-        { id: "de", name: "Germany", label: "Germany", value: "de", code: "DE", region: "Europe" },
-        { id: "fr", name: "France", label: "France", value: "fr", code: "FR", region: "Europe" },
-        { id: "jp", name: "Japan", label: "Japan", value: "jp", code: "JP", region: "Asia" },
-        { id: "au", name: "Australia", label: "Australia", value: "au", code: "AU", region: "Oceania" },
-        { id: "in", name: "India", label: "India", value: "in", code: "IN", region: "Asia" },
-        { id: "br", name: "Brazil", label: "Brazil", value: "br", code: "BR", region: "South America" },
-        { id: "mx", name: "Mexico", label: "Mexico", value: "mx", code: "MX", region: "North America" },
-        { id: "cn", name: "China", label: "China", value: "cn", code: "CN", region: "Asia" },
-        { id: "ru", name: "Russia", label: "Russia", value: "ru", code: "RU", region: "Europe/Asia" },
-        { id: "za", name: "South Africa", label: "South Africa", value: "za", code: "ZA", region: "Africa" },
-        { id: "eg", name: "Egypt", label: "Egypt", value: "eg", code: "EG", region: "Africa" },
-        { id: "ng", name: "Nigeria", label: "Nigeria", value: "ng", code: "NG", region: "Africa" },
-      ],
-      currencies: [
-        { id: "usd", name: "US Dollar", label: "US Dollar (USD)", value: "usd", code: "USD", symbol: "$" },
-        { id: "eur", name: "Euro", label: "Euro (EUR)", value: "eur", code: "EUR", symbol: "€" },
-        { id: "gbp", name: "British Pound", label: "British Pound (GBP)", value: "gbp", code: "GBP", symbol: "£" },
-        { id: "jpy", name: "Japanese Yen", label: "Japanese Yen (JPY)", value: "jpy", code: "JPY", symbol: "¥" },
-        { id: "cad", name: "Canadian Dollar", label: "Canadian Dollar (CAD)", value: "cad", code: "CAD", symbol: "C$" },
-        {
-          id: "aud",
-          name: "Australian Dollar",
-          label: "Australian Dollar (AUD)",
-          value: "aud",
-          code: "AUD",
-          symbol: "A$",
-        },
-        { id: "chf", name: "Swiss Franc", label: "Swiss Franc (CHF)", value: "chf", code: "CHF", symbol: "CHF" },
-        { id: "cny", name: "Chinese Yuan", label: "Chinese Yuan (CNY)", value: "cny", code: "CNY", symbol: "¥" },
-        { id: "inr", name: "Indian Rupee", label: "Indian Rupee (INR)", value: "inr", code: "INR", symbol: "₹" },
-        { id: "brl", name: "Brazilian Real", label: "Brazilian Real (BRL)", value: "brl", code: "BRL", symbol: "R$" },
-      ],
-      priorities: [
-        { id: "critical", name: "Critical", label: "Critical", value: "critical", level: 5, color: "#dc2626" },
-        { id: "high", name: "High", label: "High", value: "high", level: 4, color: "#ea580c" },
-        { id: "medium", name: "Medium", label: "Medium", value: "medium", level: 3, color: "#ca8a04" },
-        { id: "low", name: "Low", label: "Low", value: "low", level: 2, color: "#16a34a" },
-        { id: "minimal", name: "Minimal", label: "Minimal", value: "minimal", level: 1, color: "#6b7280" },
-      ],
-      statuses: [
-        { id: "active", name: "Active", label: "Active", value: "active", color: "#16a34a" },
-        { id: "inactive", name: "Inactive", label: "Inactive", value: "inactive", color: "#6b7280" },
-        { id: "pending", name: "Pending", label: "Pending", value: "pending", color: "#ca8a04" },
-        { id: "approved", name: "Approved", label: "Approved", value: "approved", color: "#16a34a" },
-        { id: "rejected", name: "Rejected", label: "Rejected", value: "rejected", color: "#dc2626" },
-        { id: "draft", name: "Draft", label: "Draft", value: "draft", color: "#6b7280" },
-        { id: "published", name: "Published", label: "Published", value: "published", color: "#2563eb" },
-        { id: "archived", name: "Archived", label: "Archived", value: "archived", color: "#6b7280" },
-        { id: "in_progress", name: "In Progress", label: "In Progress", value: "in_progress", color: "#2563eb" },
-        { id: "completed", name: "Completed", label: "Completed", value: "completed", color: "#16a34a" },
-      ],
-    };
-
-    const data = staticData[sourceId] || [];
-
-    // Transform data using field mapping
-    const transformedData = data.map((item) => ({
-      id: this.extractFieldValue(item, mapping.value) || item.id,
-      label: this.extractFieldValue(item, mapping.display) || item.name,
-      value: this.extractFieldValue(item, mapping.value) || item.id,
-      storeValue: this.extractFieldValue(item, mapping.store) || this.extractFieldValue(item, mapping.display),
-      description: mapping.description ? this.extractFieldValue(item, mapping.description) : undefined,
-      data: item,
-    }));
-
-    if (!searchTerm) {
-      return transformedData;
-    }
-
-    const searchLower = searchTerm.toLowerCase();
-    return transformedData.filter(
-      (item) =>
-        item.label?.toLowerCase().includes(searchLower) ||
-        item.description?.toLowerCase().includes(searchLower) ||
-        String(item.storeValue)?.toLowerCase().includes(searchLower)
-    );
   }
 }

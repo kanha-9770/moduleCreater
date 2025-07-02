@@ -19,7 +19,7 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
   const [isAddingSection, setIsAddingSection] = useState(false)
   const { toast } = useToast()
 
-  const { setNodeRef } = useDroppable({
+  const { setNodeRef, isOver } = useDroppable({
     id: "form-canvas",
     data: {
       type: "Canvas",
@@ -87,7 +87,7 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
       })
 
       if (response.ok) {
-        // Update local state
+        // Update local state with proper ordering
         const updatedSections = form.sections.map((section) =>
           section.id === sectionId ? { ...section, ...updates, updatedAt: new Date() } : section,
         )
@@ -111,8 +111,11 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
       })
 
       if (response.ok) {
-        // Update local state
-        const updatedSections = form.sections.filter((section) => section.id !== sectionId)
+        // Update local state and reorder remaining sections
+        const updatedSections = form.sections
+          .filter((section) => section.id !== sectionId)
+          .map((section, index) => ({ ...section, order: index }))
+
         onFormUpdate({
           ...form,
           sections: updatedSections,
@@ -135,7 +138,7 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
       })
 
       if (response.ok) {
-        // Update local state
+        // Update local state with proper ordering
         const updatedSections = form.sections.map((section) => ({
           ...section,
           fields: section.fields.map((field) =>
@@ -162,10 +165,12 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
       })
 
       if (response.ok) {
-        // Update local state
+        // Update local state and reorder remaining fields
         const updatedSections = form.sections.map((section) => ({
           ...section,
-          fields: section.fields.filter((field) => field.id !== fieldId),
+          fields: section.fields
+            .filter((field) => field.id !== fieldId)
+            .map((field, index) => ({ ...field, order: index })),
         }))
 
         onFormUpdate({
@@ -181,7 +186,12 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
   }
 
   return (
-    <div ref={setNodeRef} className="p-6 min-h-full">
+    <div
+      ref={setNodeRef}
+      className={`p-6 min-h-full transition-all duration-200 ${
+        isOver ? "bg-blue-50 border-2 border-dashed border-blue-300" : ""
+      }`}
+    >
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Form Header */}
         <div className="text-center mb-8">

@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,6 +17,8 @@ model FormModule {
   forms       Form[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  lookupSources LookupSource[] @relation("ModuleLookupSource")
+  lookupFieldRelations LookupFieldRelation[] @relation("ModuleFieldRelation")
 
   @@map("form_modules")
 }
@@ -45,6 +44,8 @@ model Form {
   styling           Json?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+  lookupSources     LookupSource[] @relation("FormLookupSource")
+  lookupFieldRelations LookupFieldRelation[] @relation("FormFieldRelation")
 
   @@map("forms")
 }
@@ -93,7 +94,6 @@ model FormField {
   formula       String?
   rollup        Json?
   lookup        Json?
-  // Lookup configuration fields stored directly
   sourceModule  String?
   sourceForm    String?
   displayField  String?
@@ -103,6 +103,7 @@ model FormField {
   filters       Json?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+  lookupRelations LookupFieldRelation[] @relation("FieldLookupRelation")
 
   @@map("form_fields")
 }
@@ -165,14 +166,14 @@ model FormEvent {
 }
 
 model FieldType {
-  id           String  @id @default(cuid())
-  name         String  @unique
+  id           String   @id @default(cuid())
+  name         String   @unique
   label        String
   category     String
   icon         String
   description  String?
-  defaultProps Json    @default("{}")
-  active       Boolean @default(true)
+  defaultProps Json     @default("{}")
+  active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -180,15 +181,47 @@ model FieldType {
 }
 
 model LookupSource {
-  id          String   @id @default(cuid())
-  name        String
-  type        String   // 'static', 'module', 'form', 'api'
-  sourceId    String?  // moduleId or formId for dynamic sources
-  data        Json     @default("[]")
-  description String?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  type            String   // 'static', 'module', 'form'
+  staticSourceName String?  // For static sources like 'countries', 'currencies'
+  sourceModuleId  String?  // For module sources
+  sourceFormId    String?  // For form sources
+  sourceModule    FormModule? @relation("ModuleLookupSource", fields: [sourceModuleId], references: [id], onDelete: Cascade)
+  sourceForm      Form?    @relation("FormLookupSource", fields: [sourceFormId], references: [id], onDelete: Cascade)
+  data            Json     @default("[]")
+  description     String?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lookupFieldRelations LookupFieldRelation[] @relation("SourceLookupRelation")
 
+  @@index([sourceModuleId])
+  @@index([sourceFormId])
   @@map("lookup_sources")
+}
+
+model LookupFieldRelation {
+  id              String      @id @default(cuid())
+  lookupSourceId  String
+  formFieldId     String
+  formId          String?
+  moduleId        String?
+  displayField    String?
+  valueField      String?
+  multiple        Boolean?    @default(false)
+  searchable      Boolean?    @default(false)
+  filters         Json?       @default("{}")
+  lookupSource    LookupSource @relation("SourceLookupRelation", fields: [lookupSourceId], references: [id], onDelete: Cascade)
+  formField       FormField   @relation("FieldLookupRelation", fields: [formFieldId], references: [id], onDelete: Cascade)
+  form            Form?       @relation("FormFieldRelation", fields: [formId], references: [id], onDelete: Cascade)
+  module          FormModule? @relation("ModuleFieldRelation", fields: [moduleId], references: [id], onDelete: Cascade)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([lookupSourceId])
+  @@index([formFieldId])
+  @@index([formId])
+  @@index([moduleId])
+  @@map("lookup_field_relations")
 }

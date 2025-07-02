@@ -18,6 +18,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
 import {
   Plus,
@@ -32,24 +34,52 @@ import {
   Globe,
   Eye,
   BarChart3,
+  Settings,
+  Database,
+  Calendar,
+  Share2,
+  ExternalLink,
+  Copy,
+  CheckCircle,
+  XCircle,
+  Clock,
 } from "lucide-react"
 import Link from "next/link"
 import type { FormModule, Form } from "@/types/form-builder"
 
+interface FormRecord {
+  id: string
+  formId: string
+  data: Record<string, any>
+  submittedAt: Date
+  status: "pending" | "approved" | "rejected"
+}
+
 export default function HomePage() {
   const { toast } = useToast()
   const [modules, setModules] = useState<FormModule[]>([])
+  const [selectedModule, setSelectedModule] = useState<FormModule | null>(null)
+  const [selectedForm, setSelectedForm] = useState<Form | null>(null)
+  const [formRecords, setFormRecords] = useState<FormRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [recordsLoading, setRecordsLoading] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingModule, setEditingModule] = useState<FormModule | null>(null)
   const [moduleData, setModuleData] = useState({ name: "", description: "" })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [viewMode, setViewMode] = useState<"grid" | "list" | "sidebar">("grid")
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "sidebar">("sidebar")
+  const [rightPanelTab, setRightPanelTab] = useState<"publish" | "records">("publish")
 
   useEffect(() => {
     fetchModules()
   }, [])
+
+  useEffect(() => {
+    if (selectedForm) {
+      fetchFormRecords(selectedForm.id)
+    }
+  }, [selectedForm])
 
   const fetchModules = async () => {
     try {
@@ -59,6 +89,10 @@ export default function HomePage() {
 
       if (data.success) {
         setModules(data.data)
+        // Auto-select first module if available
+        if (data.data.length > 0) {
+          setSelectedModule(data.data[0])
+        }
       } else {
         throw new Error(data.error || "Failed to fetch modules")
       }
@@ -71,6 +105,26 @@ export default function HomePage() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchFormRecords = async (formId: string) => {
+    try {
+      setRecordsLoading(true)
+      const response = await fetch(`/api/forms/${formId}/records`)
+      const data = await response.json()
+
+      if (data.success) {
+        setFormRecords(data.data || [])
+      } else {
+        console.error("Failed to fetch records:", data.error)
+        setFormRecords([])
+      }
+    } catch (error: any) {
+      console.error("Error fetching form records:", error)
+      setFormRecords([])
+    } finally {
+      setRecordsLoading(false)
     }
   }
 
@@ -175,6 +229,10 @@ export default function HomePage() {
 
       if (data.success) {
         setModules(modules.filter((m) => m.id !== moduleId))
+        if (selectedModule?.id === moduleId) {
+          setSelectedModule(null)
+          setSelectedForm(null)
+        }
         toast({
           title: "Success",
           description: "Module deleted successfully!",
@@ -192,10 +250,81 @@ export default function HomePage() {
     }
   }
 
+  const handlePublishForm = async (form: Form) => {
+    try {
+      const response = await fetch(`/api/forms/${form.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublished: !form.isPublished }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Update the form in the selected module
+        if (selectedModule) {
+          const updatedModule = {
+            ...selectedModule,
+            forms: selectedModule.forms?.map((f) => (f.id === form.id ? { ...f, isPublished: !f.isPublished } : f)),
+          }
+          setSelectedModule(updatedModule)
+
+          // Update in modules list
+          setModules(modules.map((m) => (m.id === selectedModule.id ? updatedModule : m)))
+        }
+
+        toast({
+          title: "Success",
+          description: `Form ${form.isPublished ? "unpublished" : "published"} successfully!`,
+        })
+      } else {
+        throw new Error(data.error || "Failed to publish form")
+      }
+    } catch (error: any) {
+      console.error("Error publishing form:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to publish form. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const copyFormLink = (formId: string) => {
+    const link = `${window.location.origin}/form/${formId}`
+    navigator.clipboard.writeText(link)
+    toast({
+      title: "Success",
+      description: "Form link copied to clipboard!",
+    })
+  }
+
   const openEditDialog = (module: FormModule) => {
     setEditingModule(module)
     setModuleData({ name: module.name, description: module.description || "" })
     setIsEditDialogOpen(true)
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "approved":
+        return <CheckCircle className="h-4 w-4 text-green-500" />
+      case "rejected":
+        return <XCircle className="h-4 w-4 text-red-500" />
+      default:
+        return <Clock className="h-4 w-4 text-yellow-500" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "approved":
+        return "bg-green-100 text-green-800"
+      case "rejected":
+        return "bg-red-100 text-red-800"
+      default:
+        return "bg-yellow-100 text-yellow-800"
+    }
   }
 
   const renderModuleCard = (module: FormModule) => (
@@ -337,36 +466,374 @@ export default function HomePage() {
   )
 
   const renderSidebarView = () => (
-    <div className="flex h-[calc(100vh-200px)]">
-      <div className="w-1/3 border-r bg-gray-50 p-4 overflow-y-auto">
-        <h3 className="font-semibold mb-4">Modules</h3>
-        <div className="space-y-2">
-          {modules.map((module) => (
-            <div
-              key={module.id}
-              className="p-3 bg-white rounded-lg border hover:shadow-sm transition-shadow cursor-pointer"
-            >
+    <div className="flex h-[calc(100vh-140px)]">
+      {/* Left Sidebar - Modules */}
+      <div className="w-80 border-r bg-white">
+        <div className="p-4 border-b">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-lg">Modules</h3>
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  New
+                </Button>
+              </DialogTrigger>
+            </Dialog>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-3">
+            {modules.map((module) => (
+              <Card
+                key={module.id}
+                className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
+                  selectedModule?.id === module.id ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-gray-50"
+                }`}
+                onClick={() => {
+                  setSelectedModule(module)
+                  setSelectedForm(null)
+                }}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-medium text-sm">{module.name}</h4>
+                      <p className="text-xs text-gray-600 mt-1">{module.forms?.length || 0} forms</p>
+                      {module.description && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{module.description}</p>
+                      )}
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(module)}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDeleteModule(module.id)} className="text-red-600">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Center Content - Forms */}
+      <div className="flex-1 bg-gray-50">
+        {selectedModule ? (
+          <div className="h-full flex flex-col">
+            <div className="p-6 bg-white border-b">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-medium text-sm">{module.name}</h4>
-                  <p className="text-xs text-gray-600">{module.forms?.length || 0} forms</p>
+                  <h2 className="text-xl font-semibold">{selectedModule.name}</h2>
+                  <p className="text-gray-600 text-sm mt-1">{selectedModule.forms?.length || 0} forms in this module</p>
                 </div>
-                <Link href={`/modules/${module.id}`}>
-                  <Button size="sm" variant="outline">
-                    Open
+                <Link href={`/modules/${selectedModule.id}`}>
+                  <Button>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Manage Module
                   </Button>
                 </Link>
               </div>
             </div>
-          ))}
-        </div>
+
+            <ScrollArea className="flex-1">
+              <div className="p-6">
+                {selectedModule.forms && selectedModule.forms.length > 0 ? (
+                  <div className="grid gap-4">
+                    {selectedModule.forms.map((form: Form) => (
+                      <Card
+                        key={form.id}
+                        className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
+                          selectedForm?.id === form.id ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-white"
+                        }`}
+                        onClick={() => setSelectedForm(form)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <FileText className="h-5 w-5 text-blue-600" />
+                              </div>
+                              <div>
+                                <h3 className="font-medium">{form.name}</h3>
+                                {form.description && <p className="text-sm text-gray-600">{form.description}</p>}
+                                <div className="flex items-center gap-2 mt-2">
+                                  {form.isPublished ? (
+                                    <Badge variant="default" className="text-xs">
+                                      <Globe className="h-3 w-3 mr-1" />
+                                      Published
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-xs">
+                                      Draft
+                                    </Badge>
+                                  )}
+                                  <span className="text-xs text-gray-500">
+                                    Updated {new Date(form.updatedAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Link href={`/builder/${form.id}`}>
+                                <Button variant="outline" size="sm">
+                                  <Edit className="h-4 w-4 mr-1" />
+                                  Edit
+                                </Button>
+                              </Link>
+                              <Link href={`/preview/${form.id}`} target="_blank">
+                                <Button variant="outline" size="sm">
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  Preview
+                                </Button>
+                              </Link>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No forms yet</h3>
+                    <p className="text-gray-600 mb-6">Create your first form in this module.</p>
+                    <Link href={`/modules/${selectedModule.id}`}>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create Form
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center text-gray-500">
+              <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium mb-2">Select a Module</h3>
+              <p className="text-sm">Choose a module from the sidebar to view its forms and details.</p>
+            </div>
+          </div>
+        )}
       </div>
-      <div className="flex-1 p-6">
-        <div className="text-center text-gray-500">
-          <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-          <h3 className="text-lg font-medium mb-2">Select a Module</h3>
-          <p className="text-sm">Choose a module from the sidebar to view its forms and details.</p>
+
+      {/* Right Panel - Publish & Records */}
+      <div className="w-96 border-l bg-white">
+        <div className="p-4 border-b">
+          <Tabs value={rightPanelTab} onValueChange={(value) => setRightPanelTab(value as any)}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="publish" className="flex items-center gap-1">
+                <Share2 className="h-4 w-4" />
+                Publish
+              </TabsTrigger>
+              <TabsTrigger value="records" className="flex items-center gap-1">
+                <Database className="h-4 w-4" />
+                Records
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
+
+        <ScrollArea className="flex-1 h-[calc(100vh-200px)]">
+          <div className="p-4">
+            {rightPanelTab === "publish" && (
+              <div className="space-y-4">
+                {selectedForm ? (
+                  <>
+                    <div className="space-y-3">
+                      <h3 className="font-medium">Form Publishing</h3>
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-sm">{selectedForm.name}</p>
+                                <p className="text-xs text-gray-600">
+                                  Status: {selectedForm.isPublished ? "Published" : "Draft"}
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant={selectedForm.isPublished ? "destructive" : "default"}
+                                onClick={() => handlePublishForm(selectedForm)}
+                              >
+                                {selectedForm.isPublished ? "Unpublish" : "Publish"}
+                              </Button>
+                            </div>
+
+                            {selectedForm.isPublished && (
+                              <div className="space-y-2">
+                                <Separator />
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium text-gray-700">Public Form Link:</p>
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      value={`${typeof window !== "undefined" ? window.location.origin : ""}/form/${selectedForm.id}`}
+                                      readOnly
+                                      className="text-xs"
+                                    />
+                                    <Button size="sm" variant="outline" onClick={() => copyFormLink(selectedForm.id)}>
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <Link href={`/form/${selectedForm.id}`} target="_blank" className="flex-1">
+                                    <Button size="sm" variant="outline" className="w-full bg-transparent">
+                                      <ExternalLink className="h-3 w-3 mr-1" />
+                                      Open
+                                    </Button>
+                                  </Link>
+                                  <Link href={`/forms/${selectedForm.id}/analytics`} className="flex-1">
+                                    <Button size="sm" variant="outline" className="w-full bg-transparent">
+                                      <BarChart3 className="h-3 w-3 mr-1" />
+                                      Analytics
+                                    </Button>
+                                  </Link>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h3 className="font-medium">Quick Actions</h3>
+                      <div className="grid gap-2">
+                        <Link href={`/builder/${selectedForm.id}`}>
+                          <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit Form
+                          </Button>
+                        </Link>
+                        <Link href={`/preview/${selectedForm.id}`} target="_blank">
+                          <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
+                            <Eye className="h-4 w-4 mr-2" />
+                            Preview Form
+                          </Button>
+                        </Link>
+                        <Link href={`/forms/${selectedForm.id}/records`}>
+                          <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
+                            <Database className="h-4 w-4 mr-2" />
+                            View All Records
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <Share2 className="h-8 w-8 mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm text-gray-500">Select a form to manage publishing</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {rightPanelTab === "records" && (
+              <div className="space-y-4">
+                {selectedForm ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">Form Records</h3>
+                      <Badge variant="secondary">{formRecords.length}</Badge>
+                    </div>
+
+                    {recordsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      </div>
+                    ) : formRecords.length > 0 ? (
+                      <div className="space-y-3">
+                        {formRecords.slice(0, 10).map((record) => (
+                          <Card key={record.id} className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    {getStatusIcon(record.status)}
+                                    <span className="text-xs font-medium">Record #{record.id.slice(-6)}</span>
+                                  </div>
+                                  <Badge className={`text-xs ${getStatusColor(record.status)}`}>{record.status}</Badge>
+                                </div>
+
+                                <div className="text-xs text-gray-600">
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {new Date(record.submittedAt).toLocaleDateString()}
+                                  </div>
+                                </div>
+
+                                {Object.keys(record.data).length > 0 && (
+                                  <div className="text-xs">
+                                    <p className="text-gray-500 mb-1">Sample Data:</p>
+                                    <div className="bg-gray-50 p-2 rounded text-xs">
+                                      {Object.entries(record.data)
+                                        .slice(0, 2)
+                                        .map(([key, value]) => (
+                                          <div key={key} className="truncate">
+                                            <span className="font-medium">{key}:</span> {String(value)}
+                                          </div>
+                                        ))}
+                                      {Object.keys(record.data).length > 2 && (
+                                        <p className="text-gray-400">
+                                          +{Object.keys(record.data).length - 2} more fields
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+
+                        {formRecords.length > 10 && (
+                          <div className="text-center pt-2">
+                            <Link href={`/forms/${selectedForm.id}/records`}>
+                              <Button variant="outline" size="sm">
+                                View All {formRecords.length} Records
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <Database className="h-8 w-8 mx-auto mb-3 text-gray-300" />
+                        <p className="text-sm text-gray-500 mb-2">No records yet</p>
+                        <p className="text-xs text-gray-400">Records will appear here when users submit the form</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <Database className="h-8 w-8 mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm text-gray-500">Select a form to view records</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </ScrollArea>
       </div>
     </div>
   )

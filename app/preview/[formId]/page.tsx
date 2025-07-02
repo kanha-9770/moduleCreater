@@ -19,8 +19,8 @@ import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Form } from "@/types/form-builder"
-import { useToast } from "@/components/ui/use-toast"
-import LookupField from "@/components/lookup-field"
+import { useToast } from "@/hooks/use-toast"
+import { LookupField } from "@/components/lookup-field"
 
 export default function FormPreviewPage() {
   const params = useParams()
@@ -286,7 +286,14 @@ export default function FormPreviewPage() {
                               )}
                               {field.type === "lookup" && (
                                 <LookupField
-                                  field={field}
+                                  field={{
+                                    id: field.id,
+                                    label: field.label,
+                                    placeholder: field.placeholder || undefined,
+                                    description: field.description || undefined,
+                                    validation: field.validation || { required: false },
+                                    lookup: field.lookup || undefined,
+                                  }}
                                   value={formData[field.id]}
                                   onChange={(value) => handleFieldChange(field.id, value)}
                                   disabled={field.readonly}

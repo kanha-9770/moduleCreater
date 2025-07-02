@@ -177,7 +177,8 @@ function DraggableField({ fieldType }: DraggableFieldProps) {
   const style = transform
     ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        opacity: isDragging ? 0.5 : 1,
+        opacity: isDragging ? 0.8 : 1,
+        zIndex: isDragging ? 1000 : 1,
       }
     : undefined
 
@@ -187,13 +188,19 @@ function DraggableField({ fieldType }: DraggableFieldProps) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`cursor-grab hover:cursor-grabbing transition-all duration-200 hover:shadow-md hover:scale-105 ${
-        isDragging ? "shadow-2xl scale-110 rotate-2 border-2 border-blue-400 bg-blue-50" : "border-gray-200"
+      className={`cursor-grab hover:cursor-grabbing transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+        isDragging
+          ? "shadow-2xl scale-110 rotate-6 border-2 border-blue-400 bg-blue-50 z-50"
+          : "border-gray-200 hover:border-blue-300"
       }`}
     >
       <CardContent className="p-3">
         <div className="flex items-center gap-2">
-          <div className="flex-shrink-0 p-2 bg-gray-100 rounded-md">{fieldType.icon}</div>
+          <div
+            className={`flex-shrink-0 p-2 rounded-md transition-colors ${isDragging ? "bg-blue-200" : "bg-gray-100"}`}
+          >
+            {fieldType.icon}
+          </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium truncate">{fieldType.label}</h4>
             <p className="text-xs text-gray-500 truncate">{fieldType.description}</p>
@@ -208,15 +215,15 @@ export default function FieldPalette() {
   const categories = Array.from(new Set(fieldTypes.map((field) => field.category)))
 
   return (
-    <div className="h-full flex flex-col">
-      <CardHeader className="pb-4">
+    <div className="h-full flex flex-col bg-white border-r">
+      <CardHeader className="pb-4 border-b">
         <CardTitle className="text-lg">Field Palette</CardTitle>
         <p className="text-sm text-gray-600">Drag fields to add them to your form</p>
       </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto space-y-6">
+      <CardContent className="flex-1 overflow-y-auto space-y-6 p-4">
         {categories.map((category) => (
           <div key={category}>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 sticky top-0 bg-white py-2">
               <h3 className="text-sm font-semibold text-gray-700">{category}</h3>
               <Badge variant="outline" className="text-xs">
                 {fieldTypes.filter((field) => field.category === category).length}

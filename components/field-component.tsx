@@ -1,428 +1,313 @@
-"use client"
+"use client";
 
-import { useState, type ChangeEvent } from "react"
-import { useSortable } from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Switch } from "@/components/ui/switch"
-import { Slider } from "@/components/ui/slider"
-import { GripVertical, MoreHorizontal, Settings, Trash2, Copy, Eye, EyeOff, Star } from 'lucide-react'
-import FieldSettings from "./field-settings"
-
-import type { FormField, FieldOption } from "@/types/form-builder"
-import LookupField from "./lookup-field"
+import { useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Settings, Trash2, GripVertical, EyeOff, Lock, Star } from "lucide-react";
+import type { FormField } from "@/types/form-builder";
+import FieldSettings from "@/components/field-settings";
+import { LookupField } from "@/components/lookup-field";
 
 interface FieldComponentProps {
-  field: FormField
-  isPreview?: boolean
-  isOverlay?: boolean
-  onUpdate?: (updates: Partial<FormField>) => void
-  onDelete?: () => void
-  onDuplicate?: () => void
+  field: FormField;
+  isOverlay?: boolean;
+  onUpdateField?: (field: Partial<FormField>) => void; // Updated to Partial<FormField>
+  onDeleteField?: (fieldId: string) => void;
 }
 
 export default function FieldComponent({
   field,
-  isPreview = false,
   isOverlay = false,
-  onUpdate,
-  onDelete,
-  onDuplicate,
+  onUpdateField,
+  onDeleteField,
 }: FieldComponentProps) {
-  const [showSettings, setShowSettings] = useState(false)
-  const [value, setValue] = useState(field.defaultValue || "")
-  const [date, setDate] = useState<Date>()
+  const [showSettings, setShowSettings] = useState(false);
+  const [previewValue, setPreviewValue] = useState<any>(field.defaultValue || "");
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: field.id,
     data: {
       type: "Field",
       field,
     },
-    disabled: isPreview || isOverlay,
-  })
+    disabled: isOverlay,
+  });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
+  const style = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        opacity: isDragging ? 0.5 : 1,
+      }
+    : undefined;
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setValue(e.target.value)
-  }
-
-  const getWidthClass = () => {
-    switch (field.width) {
-      case "half":
-        return "col-span-1"
-      case "third":
-        return "col-span-1"
-      case "quarter":
-        return "col-span-1"
-      default:
-        return "col-span-full"
+  const handleUpdateField = (updatedField: Partial<FormField>) => {
+    console.log("Updating field:", updatedField);
+    try {
+      onUpdateField?.({ ...field, ...updatedField });
+      setShowSettings(false);
+    } catch (error) {
+      console.error("Error in handleUpdateField:", error);
     }
-  }
+  };
 
-  // Ensure options is always an array
-  const fieldOptions: FieldOption[] = Array.isArray(field.options) ? field.options : []
-
-  const renderFieldInput = () => {
-    const baseStyle = {
-      backgroundColor: field.styling?.backgroundColor || "transparent",
-      color: field.styling?.textColor || "inherit",
-      borderColor: field.styling?.borderColor || "inherit",
-      fontSize: field.styling?.fontSize || "14px",
-      fontWeight: field.styling?.fontWeight || "normal",
+  const handleDeleteField = () => {
+    if (confirm("Are you sure you want to delete this field?")) {
+      onDeleteField?.(field.id);
     }
+  };
+
+  const renderFieldPreview = () => {
+    const options = Array.isArray(field.options) ? field.options : [];
+
+    // Convert field to match LookupField interface
+    const lookupFieldData = {
+      id: field.id,
+      label: field.label,
+      type: field.type, // Added type property
+      placeholder: field.placeholder || undefined,
+      description: field.description || undefined,
+      validation: field.validation || { required: false },
+      lookup: field.lookup || undefined,
+    };
 
     switch (field.type) {
       case "text":
       case "email":
-      case "url":
+      case "number":
       case "tel":
+      case "url":
         return (
           <Input
             type={field.type}
-            value={value}
-            onChange={handleChange}
-            placeholder={field.placeholder || undefined}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
+            placeholder={field.placeholder || ""}
+            value={previewValue}
+            onChange={(e) => setPreviewValue(e.target.value)}
+            disabled
           />
-        )
-
-      case "textarea":
-        return (
-          <Textarea
-            value={value}
-            onChange={handleChange}
-            rows={4}
-            placeholder={field.placeholder || undefined}
-            className="w-full resize-none"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
-          />
-        )
-
-      case "number":
-        return (
-          <Input
-            type="number"
-            value={value}
-            onChange={handleChange}
-            placeholder={field.placeholder || undefined}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
-          />
-        )
-
-      case "date":
-        return (
-          <Input
-            type="date"
-            value={value}
-            onChange={handleChange}
-            placeholder={field.placeholder || undefined}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
-          />
-        )
-
-      case "datetime":
-        return (
-          <Input
-            type="datetime-local"
-            value={value}
-            onChange={handleChange}
-            placeholder={field.placeholder || undefined}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
-          />
-        )
-
-      case "select":
-        return (
-          <Select value={value} onValueChange={setValue} disabled={isPreview && field.readonly}>
-            <SelectTrigger className="w-full" style={baseStyle}>
-              <SelectValue placeholder={field.placeholder || "Select an option"} />
-            </SelectTrigger>
-            <SelectContent>
-              {fieldOptions.map((option, index) => (
-                <SelectItem key={option.value || `option-${index}`} value={option.value || option.label || `option-${index}`}>
-                  {option.label || option.value || `Option ${index + 1}`}
-                </SelectItem>
-              ))}
-              {fieldOptions.length === 0 && (
-                <SelectItem value="no-options" disabled>
-                  No options available
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-        )
-
-      case "radio":
-        return (
-          <RadioGroup value={value} onValueChange={setValue} disabled={isPreview && field.readonly}>
-            {fieldOptions.map((option, index) => (
-              <div key={option.value || `option-${index}`} className="flex items-center space-x-2">
-                <RadioGroupItem 
-                  value={option.value || option.label || `option-${index}`} 
-                  id={`${field.id}-${index}`} 
-                />
-                <Label htmlFor={`${field.id}-${index}`}>
-                  {option.label || option.value || `Option ${index + 1}`}
-                </Label>
-              </div>
-            ))}
-            {fieldOptions.length === 0 && (
-              <div className="text-sm text-gray-500 italic">No options configured</div>
-            )}
-          </RadioGroup>
-        )
-
-      case "checkbox":
-        return (
-          <div className="space-y-2">
-            {fieldOptions.map((option, index) => (
-              <div key={option.value || `option-${index}`} className="flex items-center space-x-2">
-                <Checkbox id={`${field.id}-${index}`} disabled={isPreview && field.readonly} />
-                <Label htmlFor={`${field.id}-${index}`}>
-                  {option.label || option.value || `Option ${index + 1}`}
-                </Label>
-              </div>
-            ))}
-            {fieldOptions.length === 0 && (
-              <div className="text-sm text-gray-500 italic">No options configured</div>
-            )}
-          </div>
-        )
-
-      case "switch":
-        return (
-          <div className="flex items-center space-x-2">
-            <Switch disabled={isPreview && field.readonly} />
-            <Label>{field.label}</Label>
-          </div>
-        )
-
-      case "slider":
-        return (
-          <div className="space-y-2">
-            <Slider
-              defaultValue={[Number(value) || 0]}
-              max={100}
-              step={1}
-              className="w-full"
-              disabled={isPreview && field.readonly}
-            />
-            <div className="text-sm text-gray-500">Value: {value || 0}</div>
-          </div>
-        )
-
-      case "file":
-        return (
-          <Input
-            type="file"
-            accept={field.properties?.accept}
-            onChange={handleChange}
-            placeholder={field.placeholder || undefined}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
-          />
-        )
-
-      case "rating":
-        return (
-          <div className="flex space-x-1">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <Star
-                key={star}
-                className={`w-6 h-6 cursor-pointer ${
-                  star <= Number(value) ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
-                }`}
-                onClick={() => !field.readonly && setValue(star.toString())}
-              />
-            ))}
-          </div>
-        )
-
-      case "hidden":
-        return (
-          <Input
-            value={value}
-            className="w-full"
-            placeholder={field.placeholder || undefined}
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
-          />
-        )
+        );
 
       case "password":
         return (
           <Input
             type="password"
-            value={value}
-            onChange={handleChange}
-            placeholder={field.placeholder || undefined}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
+            placeholder={field.placeholder || ""}
+            value={previewValue}
+            onChange={(e) => setPreviewValue(e.target.value)}
+            disabled
           />
-        )
+        );
+
+      case "textarea":
+        return (
+          <Textarea
+            placeholder={field.placeholder || ""}
+            value={previewValue}
+            onChange={(e) => setPreviewValue(e.target.value)}
+            rows={3}
+            disabled
+          />
+        );
+
+      case "date":
+        return <Input type="date" value={previewValue} onChange={(e) => setPreviewValue(e.target.value)} disabled />;
+
+      case "datetime":
+        return (
+          <Input
+            type="datetime-local"
+            value={previewValue}
+            onChange={(e) => setPreviewValue(e.target.value)}
+            disabled
+          />
+        );
+
+      case "checkbox":
+        return (
+          <div className="flex items-center space-x-2">
+            <Checkbox checked={previewValue} onCheckedChange={setPreviewValue} disabled />
+            <Label className="text-sm">{field.label}</Label>
+          </div>
+        );
+
+      case "switch":
+        return (
+          <div className="flex items-center space-x-2">
+            <Switch checked={previewValue} onCheckedChange={setPreviewValue} disabled />
+            <Label className="text-sm">{field.label}</Label>
+          </div>
+        );
+
+      case "radio":
+        return (
+          <RadioGroup value={previewValue} onValueChange={setPreviewValue} disabled>
+            {options.map((option: any) => (
+              <div key={option.value} className="flex items-center space-x-2">
+                <RadioGroupItem value={option.value} />
+                <Label className="text-sm">{option.label}</Label>
+              </div>
+            ))}
+          </RadioGroup>
+        );
+
+      case "select":
+        return (
+          <Select value={previewValue} onValueChange={setPreviewValue} disabled>
+            <SelectTrigger>
+              <SelectValue placeholder={field.placeholder || "Select an option"} />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option: any) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "slider":
+        return (
+          <div className="space-y-2">
+            <Slider
+              value={[previewValue || 0]}
+              onValueChange={(vals) => setPreviewValue(vals[0])}
+              max={field.validation?.max || 100}
+              min={field.validation?.min || 0}
+              step={1}
+              disabled
+              className="w-full"
+            />
+            <div className="text-center text-sm text-muted-foreground">Value: {previewValue || 0}</div>
+          </div>
+        );
+
+      case "rating":
+        return (
+          <div className="flex items-center space-x-1">
+            {[1, 2, 3, 4, 5].map((rating) => (
+              <Star
+                key={rating}
+                className={`h-6 w-6 ${
+                  rating <= (previewValue || 0) ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
+                }`}
+              />
+            ))}
+            <span className="ml-2 text-sm text-muted-foreground">
+              {previewValue ? `${previewValue}/5` : "Not rated"}
+            </span>
+          </div>
+        );
 
       case "lookup":
-      case "user":
-        return <LookupField field={field} value={value} onChange={setValue} disabled={isPreview && field.readonly} />
+        return <LookupField field={lookupFieldData} value={previewValue} onChange={setPreviewValue} disabled={true} />;
+
+      case "file":
+        return <Input type="file" disabled multiple={field.properties?.multiple || false} />;
+
+      case "hidden":
+        return (
+          <div className="flex items-center space-x-2 p-2 bg-gray-100 rounded border-dashed border-2">
+            <EyeOff className="h-4 w-4 text-gray-500" />
+            <span className="text-sm text-gray-500">Hidden Field</span>
+            <Badge variant="outline" className="text-xs">
+              {field.defaultValue || "No value"}
+            </Badge>
+          </div>
+        );
 
       default:
         return (
           <Input
-            value={value}
-            onChange={handleChange}
-            placeholder={field.placeholder || "Enter value"}
-            className="w-full"
-            style={baseStyle}
-            disabled={isPreview && field.readonly}
-            readOnly={field.readonly}
+            placeholder={field.placeholder || ""}
+            value={previewValue}
+            onChange={(e) => setPreviewValue(e.target.value)}
+            disabled
           />
-        )
+        );
     }
-  }
-
-  if (!field.visible && !isPreview) {
-    return (
-      <Card className="border-dashed border-gray-300 opacity-50">
-        <CardContent className="p-4 text-center">
-          <EyeOff className="w-4 h-4 mx-auto mb-1 text-gray-400" />
-          <p className="text-xs text-gray-500">Hidden Field: {field.label}</p>
-        </CardContent>
-      </Card>
-    )
-  }
+  };
 
   return (
     <>
       <Card
         ref={setNodeRef}
         style={style}
-        className={`group transition-all duration-300 ${getWidthClass()} ${
-          isDragging
-            ? "shadow-2xl scale-105 rotate-1 border-2 border-blue-400 bg-blue-50 z-50"
-            : "hover:shadow-md border-gray-200"
-        }`}
+        className={`group relative transition-all duration-200 ${
+          isDragging ? "shadow-2xl scale-105 rotate-1 border-blue-400 bg-blue-50" : "hover:shadow-md"
+        } ${!field.visible ? "opacity-50" : ""} ${field.readonly ? "bg-gray-50" : ""}`}
       >
         <CardContent className="p-4">
-          <div className="space-y-3">
-            {/* Field Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {!isPreview && !isOverlay && (
-                  <div
-                    {...attributes}
-                    {...listeners}
-                    className={`cursor-grab hover:cursor-grabbing p-1 rounded transition-all duration-200 ${
-                      isDragging ? "bg-blue-500 text-white" : "hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                    }`}
-                  >
-                    <GripVertical className="w-4 h-4" />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <Label className="text-sm font-medium">
+          {/* Field Header */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2">
+              <div
+                {...listeners}
+                {...attributes}
+                className="cursor-grab hover:cursor-grabbing p-1 rounded hover:bg-gray-100"
+              >
+                <GripVertical className="h-4 w-4 text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <Label className="font-medium text-sm">
                     {field.label}
                     {field.validation?.required && <span className="text-red-500 ml-1">*</span>}
                   </Label>
-                  {field.description && <p className="text-xs text-gray-500 mt-1">{field.description}</p>}
+                  <div className="flex items-center space-x-1">
+                    {!field.visible && <EyeOff className="h-3 w-3 text-gray-400" />}
+                    {field.readonly && <Lock className="h-3 w-3 text-gray-400" />}
+                    <Badge variant="outline" className="text-xs">
+                      {field.type}
+                    </Badge>
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  {field.type}
-                </Badge>
+                {field.description && <p className="text-xs text-muted-foreground mt-1">{field.description}</p>}
               </div>
-
-              {!isPreview && !isOverlay && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => setShowSettings(true)}>
-                      <Settings className="w-4 h-4 mr-2" />
-                      Field Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={onDuplicate}>
-                      <Copy className="w-4 h-4 mr-2" />
-                      Duplicate Field
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => onUpdate?.({ visible: !field.visible })}>
-                      {field.visible ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
-                      {field.visible ? "Hide" : "Show"} Field
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onUpdate?.({ readonly: !field.readonly })}>
-                      <Settings className="w-4 h-4 mr-2" />
-                      {field.readonly ? "Make Editable" : "Make Read-only"}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onDelete} className="text-red-600">
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete Field
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
             </div>
 
-            {/* Field Input */}
-            <div className="space-y-2">{renderFieldInput()}</div>
+            {/* Field Actions */}
+            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowSettings(true)}>
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                onClick={handleDeleteField}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
 
-            {/* Field Footer */}
-            {field.validation?.required && isPreview && <p className="text-xs text-red-500">This field is required</p>}
+          {/* Field Preview */}
+          <div className="space-y-2">
+            {field.type !== "checkbox" && field.type !== "switch" && field.type !== "hidden" && (
+              <Label className="text-sm font-medium">
+                {field.label}
+                {field.validation?.required && <span className="text-red-500 ml-1">*</span>}
+              </Label>
+            )}
+            {renderFieldPreview()}
+          </div>
+
+          {/* Field Info */}
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>ID: {field.id}</span>
+            <span>Order: {field.order}</span>
           </div>
         </CardContent>
-
-        {/* Drag Indicator */}
-        {isDragging && (
-          <div className="absolute inset-0 bg-blue-100 border-2 border-blue-400 rounded-lg flex items-center justify-center">
-            <div className="text-blue-700 font-medium">Moving field...</div>
-          </div>
-        )}
       </Card>
 
       {/* Field Settings Dialog */}
@@ -431,9 +316,9 @@ export default function FieldComponent({
           field={field}
           open={showSettings}
           onOpenChange={setShowSettings}
-          onUpdate={onUpdate || (() => {})}
+          onUpdate={handleUpdateField} // Changed to onUpdate
         />
       )}
     </>
-  )
+  );
 }

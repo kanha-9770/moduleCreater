@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,6 +30,17 @@ interface RecordWithForm extends FormRecord {
   form?: Form
 }
 
+interface FieldValue {
+  type?: string
+  label?: string
+  value: any
+  options?: any[]
+  sectionId?: string
+  validation?: { required?: boolean }
+  description?: string
+  placeholder?: string
+}
+
 export default function FormRecordsPage() {
   const params = useParams()
   const router = useRouter()
@@ -41,43 +52,38 @@ export default function FormRecordsPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedRecord, setSelectedRecord] = useState<RecordWithForm | null>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
-
-  // Filters and pagination
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalRecords, setTotalRecords] = useState(0)
   const recordsPerPage = 20
-
-  // Field mapping for better display
+  const [totalRecords, setTotalRecords] = useState(0)
   const [fieldMap, setFieldMap] = useState<Record<string, FormField>>({})
 
   useEffect(() => {
-    fetchForm()
-    fetchRecords()
+    const fetchData = async () => {
+      await Promise.all([fetchForm(), fetchRecords()])
+    }
+    fetchData()
   }, [formId, currentPage, statusFilter, searchTerm])
 
   const fetchForm = async () => {
     try {
       const response = await fetch(`/api/forms/${formId}`)
       if (!response.ok) throw new Error("Failed to fetch form")
-
       const formData = await response.json()
       setForm(formData)
 
-      // Create field mapping for better display
       const mapping: Record<string, FormField> = {}
       formData.sections?.forEach((section: any) => {
         section.fields?.forEach((field: FormField) => {
           mapping[field.id] = field
-          // Also map by label for easier lookup
           mapping[field.label.toLowerCase().replace(/\s+/g, "_")] = field
         })
       })
       setFieldMap(mapping)
     } catch (err) {
-      console.error("Error fetching form:", err)
       setError("Failed to load form details")
+      console.error("Error fetching form:", err)
     }
   }
 
@@ -93,13 +99,12 @@ export default function FormRecordsPage() {
 
       const response = await fetch(`/api/forms/${formId}/records?${params}`)
       if (!response.ok) throw new Error("Failed to fetch records")
-
       const data = await response.json()
       setRecords(data.records || [])
       setTotalRecords(data.total || 0)
     } catch (err) {
-      console.error("Error fetching records:", err)
       setError("Failed to load records")
+      console.error("Error fetching records:", err)
     } finally {
       setLoading(false)
     }
@@ -109,113 +114,79 @@ export default function FormRecordsPage() {
     try {
       const response = await fetch(`/api/forms/${formId}/export?format=${format}`)
       if (!response.ok) throw new Error("Export failed")
-
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `form-${formId}-records.${format}`
-      document.body.appendChild(a)
+      a.download = `form-records-${formId}.${format}`
       a.click()
       window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      a.remove()
     } catch (err) {
-      console.error("Export error:", err)
       setError("Failed to export records")
+      console.error("Export error:", err)
     }
   }
 
   const handleDeleteRecord = async (recordId: string) => {
     if (!confirm("Are you sure you want to delete this record?")) return
-
     try {
       const response = await fetch(`/api/forms/${formId}/records/${recordId}`, {
         method: "DELETE",
       })
       if (!response.ok) throw new Error("Failed to delete record")
-
-      fetchRecords() // Refresh the list
+      fetchRecords()
     } catch (err) {
-      console.error("Delete error:", err)
       setError("Failed to delete record")
+      console.error("Delete error:", err)
     }
   }
 
-  const formatValue = (value: any, field?: FormField): string => {
-    if (value === null || value === undefined) return "-"
-
-    if (Array.isArray(value)) {
-      return value.join(", ")
+  const formatValue = (field: FieldValue): string => {
+    if (field?.value == null) return "-"
+    
+    const value = typeof field === "object" && "value" in field ? field.value : field
+    
+    switch (field.type) {
+      case "date":
+        return new Date(value).toLocaleDateString()
+      case "number":
+        return Number(value).toLocaleString()
+      case "checkbox":
+        return value ? "Yes" : "No"
+      case "lookup":
+      case "text":
+      default:
+        return String(value)
     }
-
-    if (typeof value === "object") {
-      return JSON.stringify(value)
-    }
-
-    // Format based on field type
-    if (field) {
-      switch (field.type) {
-        case "date":
-          return new Date(value).toLocaleDateString()
-        case "email":
-          return value
-        case "number":
-          return Number(value).toLocaleString()
-        case "checkbox":
-          return value ? "Yes" : "No"
-        default:
-          return String(value)
-      }
-    }
-
-    return String(value)
   }
 
-  const getFieldLabel = (key: string): string => {
-    // Try to find field by ID first
-    if (fieldMap[key]) {
-      return fieldMap[key].label
-    }
-
-    // Try to find by normalized key
+  const getFieldLabel = (key: string, recordData?: Record<string, FieldValue>): string => {
+    if (recordData?.[key]?.label) return recordData[key].label
+    if (fieldMap[key]) return fieldMap[key].label
     const normalizedKey = key.toLowerCase().replace(/\s+/g, "_")
-    if (fieldMap[normalizedKey]) {
-      return fieldMap[normalizedKey].label
-    }
-
-    // Fallback to formatted key
-    return key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+    if (fieldMap[normalizedKey]) return fieldMap[normalizedKey].label
+    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
-  const getDisplayColumns = (records: RecordWithForm[]): string[] => {
-    if (records.length === 0) return []
-
-    // Get all unique keys from record data
+  const displayColumns = useMemo(() => {
+    if (!records.length) return []
     const allKeys = new Set<string>()
     records.forEach((record) => {
       Object.keys(record.recordData || {}).forEach((key) => allKeys.add(key))
     })
 
-    // Sort keys by field order if available, otherwise alphabetically
-    const sortedKeys = Array.from(allKeys).sort((a, b) => {
+    return Array.from(allKeys).sort((a, b) => {
       const fieldA = fieldMap[a]
       const fieldB = fieldMap[b]
+      if (fieldA && fieldB) return (fieldA.order || 0) - (fieldB.order || 0)
+      return getFieldLabel(a, records[0]?.recordData).localeCompare(getFieldLabel(b, records[0]?.recordData))
+    }).slice(0, 4)
+  }, [records, fieldMap])
 
-      if (fieldA && fieldB) {
-        return (fieldA.order || 0) - (fieldB.order || 0)
-      }
-
-      return a.localeCompare(b)
-    })
-
-    // Return first 4 columns for table display
-    return sortedKeys.slice(0, 4)
-  }
-
-  const displayColumns = getDisplayColumns(records)
   const totalPages = Math.ceil(totalRecords / recordsPerPage)
 
-  if (loading && records.length === 0) {
+  if (loading && !records.length) {
     return (
       <div className="container mx-auto py-8">
         <div className="flex items-center justify-center h-64">
@@ -228,23 +199,19 @@ export default function FormRecordsPage() {
   return (
     <TooltipProvider>
       <div className="container mx-auto py-8 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        <header className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => router.back()}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
             <div>
-              <h1 className="text-3xl font-bold">Form Records</h1>
-              <p className="text-muted-foreground">
-                {form?.name} • {totalRecords} total submissions
-              </p>
+              <h1 className="text-3xl font-bold">{form?.name || "Form Records"}</h1>
+              <p className="text-muted-foreground">{totalRecords} total submissions</p>
             </div>
           </div>
-
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => fetchRecords()}>
+            <Button variant="outline" onClick={fetchRecords}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
@@ -261,83 +228,54 @@ export default function FormRecordsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
+        </header>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Submissions</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalRecords}</div>
-            </CardContent>
-          </Card>
+        <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[
+            { title: "Total Submissions", value: totalRecords, icon: FileText },
+            {
+              title: "This Month",
+              value: records.filter((r) => {
+                const date = new Date(r.submittedAt)
+                const now = new Date()
+                return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
+              }).length,
+              icon: Calendar,
+            },
+            { title: "Completed", value: records.filter((r) => r.status === "submitted").length, icon: User },
+            {
+              title: "Conversion Rate",
+              value: totalRecords > 0 ? `${Math.round((records.filter((r) => r.status === "submitted").length / totalRecords) * 100)}%` : "0%",
+              icon: FileText,
+            },
+          ].map(({ title, value, icon: Icon }) => (
+            <Card key={title}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{title}</CardTitle>
+                <Icon className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{value}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">This Month</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {
-                  records.filter((r) => {
-                    const date = new Date(r.submittedAt)
-                    const now = new Date()
-                    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
-                  }).length
-                }
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Completed</CardTitle>
-              <User className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{records.filter((r) => r.status === "submitted").length}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {totalRecords > 0
-                  ? Math.round((records.filter((r) => r.status === "submitted").length / totalRecords) * 100)
-                  : 0}
-                %
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters */}
         <Card>
           <CardHeader>
             <CardTitle>Filters</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search records..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search records..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
               </div>
-
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full sm:w-48">
                   <SelectValue placeholder="Filter by status" />
@@ -353,7 +291,6 @@ export default function FormRecordsPage() {
           </CardContent>
         </Card>
 
-        {/* Records Table */}
         <Card>
           <CardHeader>
             <CardTitle>Records</CardTitle>
@@ -363,15 +300,12 @@ export default function FormRecordsPage() {
           </CardHeader>
           <CardContent>
             {error && <div className="bg-destructive/15 text-destructive px-4 py-2 rounded-md mb-4">{error}</div>}
-
             {records.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No records found</h3>
                 <p className="text-muted-foreground">
-                  {searchTerm || statusFilter !== "all"
-                    ? "Try adjusting your filters"
-                    : "No submissions have been received yet"}
+                  {searchTerm || statusFilter !== "all" ? "Try adjusting your filters" : "No submissions yet"}
                 </p>
               </div>
             ) : (
@@ -379,15 +313,15 @@ export default function FormRecordsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>ID</TableHead>
+                      <TableHead className="w-24">ID</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Submitted</TableHead>
                       <TableHead>Submitted By</TableHead>
                       {displayColumns.map((column) => (
-                        <TableHead key={column}>{getFieldLabel(column)}</TableHead>
+                        <TableHead key={column}>{getFieldLabel(column, records[0]?.recordData)}</TableHead>
                       ))}
                       {Object.keys(records[0]?.recordData || {}).length > displayColumns.length && (
-                        <TableHead>More Fields</TableHead>
+                        <TableHead>More</TableHead>
                       )}
                       <TableHead className="w-12">Actions</TableHead>
                     </TableRow>
@@ -418,32 +352,26 @@ export default function FormRecordsPage() {
                           </Tooltip>
                         </TableCell>
                         <TableCell>{record.submittedBy || "Anonymous"}</TableCell>
-                        {displayColumns.map((column) => {
-                          const value = record.recordData?.[column]
-                          const field = fieldMap[column]
-                          const formattedValue = formatValue(value, field)
-
-                          return (
-                            <TableCell key={column}>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <div className="max-w-32 truncate">{formattedValue}</div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <div className="max-w-xs">
-                                    <strong>{getFieldLabel(column)}:</strong>
-                                    <br />
-                                    {formattedValue}
-                                  </div>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TableCell>
-                          )
-                        })}
+                        {displayColumns.map((column) => (
+                          <TableCell key={column}>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div className="max-w-32 truncate">{formatValue(record.recordData?.[column])}</div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="max-w-xs">
+                                  <strong>{getFieldLabel(column, record.recordData)}:</strong>
+                                  <br />
+                                  {formatValue(record.recordData?.[column])}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                        ))}
                         {Object.keys(record.recordData || {}).length > displayColumns.length && (
                           <TableCell>
                             <Badge variant="outline">
-                              +{Object.keys(record.recordData || {}).length - displayColumns.length} more
+                              +{Object.keys(record.recordData || {}).length - displayColumns.length}
                             </Badge>
                           </TableCell>
                         )}
@@ -489,7 +417,6 @@ export default function FormRecordsPage() {
           </CardContent>
         </Card>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
@@ -499,7 +426,7 @@ export default function FormRecordsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
               >
                 Previous
@@ -507,7 +434,7 @@ export default function FormRecordsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
               >
                 Next
@@ -516,7 +443,6 @@ export default function FormRecordsPage() {
           </div>
         )}
 
-        {/* Detail Modal */}
         <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
@@ -525,73 +451,40 @@ export default function FormRecordsPage() {
                 Submitted on {selectedRecord && new Date(selectedRecord.submittedAt).toLocaleString()}
               </DialogDescription>
             </DialogHeader>
-
             {selectedRecord && (
               <div className="space-y-6">
-                {/* Record Metadata */}
                 <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Record ID</label>
-                    <p className="font-mono text-sm">{selectedRecord.id}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Status</label>
-                    <div className="mt-1">
-                      <Badge
-                        variant={
-                          selectedRecord.status === "submitted"
-                            ? "default"
-                            : selectedRecord.status === "draft"
-                              ? "secondary"
-                              : selectedRecord.status === "pending"
-                                ? "outline"
-                                : "destructive"
-                        }
-                      >
-                        {selectedRecord.status}
-                      </Badge>
+                  {[
+                    { label: "Record ID", value: selectedRecord.id },
+                    { label: "Status", value: <Badge variant={selectedRecord.status === "submitted" ? "default" : "secondary"}>{selectedRecord.status}</Badge> },
+                    { label: "Submitted By", value: selectedRecord.submittedBy || "Anonymous" },
+                    { label: "Submitted At", value: new Date(selectedRecord.submittedAt).toLocaleString() },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <label className="text-sm font-medium text-muted-foreground">{label}</label>
+                      <p className={typeof value === "string" ? "font-mono text-sm" : ""}>{value}</p>
                     </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Submitted By</label>
-                    <p>{selectedRecord.submittedBy || "Anonymous"}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Submitted At</label>
-                    <p>{new Date(selectedRecord.submittedAt).toLocaleString()}</p>
-                  </div>
+                  ))}
                 </div>
-
-                {/* Record Data */}
                 <div>
                   <h3 className="text-lg font-semibold mb-4">Form Data</h3>
                   <div className="grid gap-4">
-                    {Object.entries(selectedRecord.recordData || {}).map(([key, value]) => {
-                      const field = fieldMap[key]
-                      const label = getFieldLabel(key)
-                      const formattedValue = formatValue(value, field)
-
-                      return (
-                        <div key={key} className="border rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-sm font-medium">{label}</label>
-                            {field && (
-                              <Badge variant="outline" className="text-xs">
-                                {field.type}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-sm text-muted-foreground mb-1">Field ID: {key}</div>
-                          <div className="bg-muted/50 p-3 rounded border">
-                            {typeof value === "object" ? (
-                              <pre className="text-sm overflow-x-auto">{JSON.stringify(value, null, 2)}</pre>
-                            ) : (
-                              <p className="text-sm">{formattedValue}</p>
-                            )}
-                          </div>
+                    {Object.entries(selectedRecord.recordData || {}).map(([key, field]) => (
+                      <div key={key} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-medium">{getFieldLabel(key, selectedRecord.recordData)}</label>
+                          {field.type && (
+                            <Badge variant="outline" className="text-xs">
+                              {field.type}
+                            </Badge>
+                          )}
                         </div>
-                      )
-                    })}
+                        <div className="text-sm text-muted-foreground mb-1">Field ID: {key}</div>
+                        <div className="bg-muted/50 p-3 rounded border">
+                          <p className="text-sm">{formatValue(field)}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

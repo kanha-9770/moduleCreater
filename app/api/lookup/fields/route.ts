@@ -6,8 +6,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const sourceId = searchParams.get("sourceId")
 
-    console.log("Fetching fields for source:", sourceId)
-
     if (!sourceId) {
       return NextResponse.json(
         {
@@ -18,9 +16,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const fields = await LookupService.getSourceFields(sourceId)
+    console.log("Fetching fields for source:", sourceId)
 
-    console.log("Found fields:", fields)
+    const lookupService = new LookupService()
+    const fields = await lookupService.getFields(sourceId)
+
+    console.log(`Found ${fields.length} fields for source ${sourceId}`)
 
     return NextResponse.json({
       success: true,

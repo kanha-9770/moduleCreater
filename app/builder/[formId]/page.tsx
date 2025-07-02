@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast"
 import FormCanvas from "@/components/form-canvas"
 import FieldPalette from "@/components/field-palette"
 import PublishFormDialog from "@/components/publish-form-dialog"
+import LookupConfigurationDialog from "@/components/lookup-configuration-dialog"
 import type { Form, FormSection, FormField } from "@/types/form-builder"
 import { Save, Eye, ArrowLeft, Loader2, Share2 } from "lucide-react"
 import Link from "next/link"
@@ -37,6 +38,8 @@ export default function FormBuilderPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false)
+  const [isLookupDialogOpen, setIsLookupDialogOpen] = useState(false)
+  const [pendingLookupSectionId, setPendingLookupSectionId] = useState<string | null>(null)
 
   const [activeItem, setActiveItem] = useState<FormField | FormSection | null>(null)
 
@@ -73,6 +76,10 @@ export default function FormBuilderPage() {
   }
 
   const handleFormUpdate = (updatedForm: Form) => {
+    setForm(updatedForm)
+  }
+
+  const handleFormPublished = (updatedForm: Form) => {
     setForm(updatedForm)
   }
 
@@ -157,91 +164,22 @@ export default function FormBuilderPage() {
 
     // Handle dropping a new field from the palette
     if (active.data.current?.isPaletteItem) {
-      // The droppable area can be the section itself or a field within it.
       const overData = over.data.current
       const sectionId = overData?.isSectionDropzone ? String(over.id) : overData?.field?.sectionId
 
       if (!sectionId || !form) return
 
       const fieldType = String(active.id)
-      const newField: FormField = {
-        id: `temp_${uuidv4()}`, // Temporary ID until saved
-        type: fieldType,
-        label: `New ${fieldType.charAt(0).toUpperCase() + fieldType.slice(1)}`,
-        sectionId: sectionId,
-        placeholder: "",
-        description: "",
-        defaultValue: "",
-        options: [],
-        validation: {},
-        visible: true,
-        readonly: false,
-        width: "full",
-        order: form.sections.find((s) => s.id === sectionId)?.fields.length || 0,
-        conditional: null,
-        styling: null,
-        properties: null,
-        rollup: null,
-        lookup: null,
-        formula: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+
+      // Special handling for lookup fields - show configuration dialog
+      if (fieldType === "lookup") {
+        setPendingLookupSectionId(sectionId)
+        setIsLookupDialogOpen(true)
+        return
       }
 
-      // Save the field to database immediately
-      try {
-        const response = await fetch("/api/fields", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sectionId: sectionId,
-            type: fieldType,
-            label: newField.label,
-            placeholder: newField.placeholder,
-            description: newField.description,
-            defaultValue: newField.defaultValue,
-            options: newField.options,
-            validation: newField.validation,
-            visible: newField.visible,
-            readonly: newField.readonly,
-            width: newField.width,
-            order: newField.order,
-          }),
-        })
-
-        if (!response.ok) throw new Error("Failed to create field")
-
-        const result = await response.json()
-        if (result.success) {
-          // Update the field with the real ID from database
-          const savedField = { ...newField, id: result.data.id }
-
-          setForm((prevForm) => {
-            if (!prevForm) return null
-            const newSections = prevForm.sections.map((section) => {
-              if (section.id === sectionId) {
-                return { ...section, fields: [...section.fields, savedField] }
-              }
-              return section
-            })
-            return { ...prevForm, sections: newSections }
-          })
-
-          toast({
-            title: "Success",
-            description: "Field added successfully",
-          })
-        } else {
-          throw new Error(result.error || "Failed to create field")
-        }
-      } catch (error: any) {
-        console.error("Error creating field:", error)
-        toast({
-          title: "Error",
-          description: error.message,
-          variant: "destructive",
-        })
-      }
+      // Handle other field types normally
+      await createSingleField(fieldType, sectionId)
       return
     }
 
@@ -276,8 +214,154 @@ export default function FormBuilderPage() {
           )
           return { ...prevForm, sections: newSections }
         }
-        // This case (moving between sections) is handled by onDragOver
         return prevForm
+      })
+    }
+  }
+
+  const createSingleField = async (fieldType: string, sectionId: string) => {
+    if (!form) return
+
+    const newField: FormField = {
+      id: `temp_${uuidv4()}`,
+      type: fieldType,
+      label: `New ${fieldType.charAt(0).toUpperCase() + fieldType.slice(1)}`,
+      sectionId: sectionId,
+      placeholder: "",
+      description: "",
+      defaultValue: "",
+      options: [],
+      validation: {},
+      visible: true,
+      readonly: false,
+      width: "full",
+      order: form.sections.find((s) => s.id === sectionId)?.fields.length || 0,
+      conditional: null,
+      styling: null,
+      properties: null,
+      rollup: null,
+      lookup: null,
+      formula: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    try {
+      const response = await fetch("/api/fields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sectionId: sectionId,
+          type: fieldType,
+          label: newField.label,
+          placeholder: newField.placeholder,
+          description: newField.description,
+          defaultValue: newField.defaultValue,
+          options: newField.options,
+          validation: newField.validation,
+          visible: newField.visible,
+          readonly: newField.readonly,
+          width: newField.width,
+          order: newField.order,
+        }),
+      })
+
+      if (!response.ok) throw new Error("Failed to create field")
+
+      const result = await response.json()
+      if (result.success) {
+        const savedField = { ...newField, id: result.data.id }
+
+        setForm((prevForm) => {
+          if (!prevForm) return null
+          const newSections = prevForm.sections.map((section) => {
+            if (section.id === sectionId) {
+              return { ...section, fields: [...section.fields, savedField] }
+            }
+            return section
+          })
+          return { ...prevForm, sections: newSections }
+        })
+
+        toast({
+          title: "Success",
+          description: "Field added successfully",
+        })
+      } else {
+        throw new Error(result.error || "Failed to create field")
+      }
+    } catch (error: any) {
+      console.error("Error creating field:", error)
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleLookupFieldsConfirm = async (lookupFields: Partial<FormField>[]) => {
+    if (!pendingLookupSectionId || !form) return
+
+    try {
+      const createdFields: FormField[] = []
+
+      for (const fieldData of lookupFields) {
+        const response = await fetch("/api/fields", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sectionId: pendingLookupSectionId,
+            type: fieldData.type,
+            label: fieldData.label,
+            placeholder: fieldData.placeholder,
+            description: fieldData.description,
+            defaultValue: fieldData.defaultValue,
+            options: fieldData.options,
+            validation: fieldData.validation,
+            visible: fieldData.visible,
+            readonly: fieldData.readonly,
+            width: fieldData.width,
+            order: fieldData.order,
+            lookup: fieldData.lookup,
+          }),
+        })
+
+        if (!response.ok) throw new Error("Failed to create lookup field")
+
+        const result = await response.json()
+        if (result.success) {
+          const savedField: FormField = {
+            ...fieldData,
+            id: result.data.id,
+            sectionId: pendingLookupSectionId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as FormField
+
+          createdFields.push(savedField)
+        }
+      }
+
+      // Update form state with all created fields
+      setForm((prevForm) => {
+        if (!prevForm) return null
+        const newSections = prevForm.sections.map((section) => {
+          if (section.id === pendingLookupSectionId) {
+            return { ...section, fields: [...section.fields, ...createdFields] }
+          }
+          return section
+        })
+        return { ...prevForm, sections: newSections }
+      })
+
+      setPendingLookupSectionId(null)
+    } catch (error: any) {
+      console.error("Error creating lookup fields:", error)
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
       })
     }
   }
@@ -287,17 +371,13 @@ export default function FormBuilderPage() {
     setSaving(true)
 
     try {
-      // First, save/update all sections
       const sectionsToSave = form.sections.map((section, sectionIndex) => ({
         ...section,
         order: sectionIndex,
       }))
 
-      // Save sections and their fields
       for (const section of sectionsToSave) {
-        // Update section
         if (!section.id.startsWith("section_")) {
-          // Section exists in database, update it
           await fetch(`/api/sections/${section.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -312,7 +392,6 @@ export default function FormBuilderPage() {
             }),
           })
         } else {
-          // New section, create it
           const response = await fetch("/api/sections", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -331,13 +410,11 @@ export default function FormBuilderPage() {
           if (response.ok) {
             const result = await response.json()
             if (result.success) {
-              // Update the section ID in our local state
               section.id = result.data.id
             }
           }
         }
 
-        // Update fields in this section
         const fieldsToSave = section.fields.map((field, fieldIndex) => ({
           ...field,
           order: fieldIndex,
@@ -346,7 +423,6 @@ export default function FormBuilderPage() {
 
         for (const field of fieldsToSave) {
           if (!field.id.startsWith("temp_") && !field.id.startsWith("field_")) {
-            // Field exists in database, update it
             await fetch(`/api/fields/${field.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -372,11 +448,9 @@ export default function FormBuilderPage() {
               }),
             })
           }
-          // Note: New fields are already saved when dropped, so we don't need to create them again
         }
       }
 
-      // Finally, update the form itself
       const formToSave = {
         name: form.name,
         description: form.description,
@@ -393,7 +467,6 @@ export default function FormBuilderPage() {
 
       const result = await response.json()
       if (result.success) {
-        // Refresh the form data to get the latest state from database
         await fetchForm()
         toast({ title: "Success", description: "Form saved successfully" })
       } else {
@@ -478,6 +551,7 @@ export default function FormBuilderPage() {
           </main>
         </div>
       </div>
+
       {typeof window !== "undefined" &&
         createPortal(
           <DragOverlay>
@@ -485,7 +559,6 @@ export default function FormBuilderPage() {
               <SectionComponent
                 section={activeItem as FormSection}
                 isOverlay
-                // Provide dummy props for overlay rendering
                 onUpdateSection={() => {}}
                 onDeleteSection={() => {}}
                 onUpdateField={() => {}}
@@ -498,11 +571,19 @@ export default function FormBuilderPage() {
           </DragOverlay>,
           document.body,
         )}
+
       <PublishFormDialog
         form={form}
         open={isPublishDialogOpen}
         onOpenChange={setIsPublishDialogOpen}
-        onFormPublished={(updatedForm) => setForm(updatedForm)}
+        onFormPublished={handleFormPublished}
+      />
+
+      <LookupConfigurationDialog
+        open={isLookupDialogOpen}
+        onOpenChange={setIsLookupDialogOpen}
+        onConfirm={handleLookupFieldsConfirm}
+        sectionId={pendingLookupSectionId || ""}
       />
     </DndContext>
   )

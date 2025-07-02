@@ -1,3 +1,4 @@
+
 "use client"
 
 import type React from "react"
@@ -17,7 +18,7 @@ import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { CheckCircle, AlertCircle, Loader2, Send, Eye, Calendar } from "lucide-react"
 import type { Form, FormField } from "@/types/form-builder"
-import LookupField from "@/components/lookup-field"
+import { LookupField } from "@/components/lookup-field"
 
 export default function PublicFormPage() {
   const params = useParams()
@@ -30,7 +31,6 @@ export default function PublicFormPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [currentStep, setCurrentStep] = useState(0)
   const [completionPercentage, setCompletionPercentage] = useState(0)
 
   useEffect(() => {
@@ -127,8 +127,37 @@ export default function PublicFormPage() {
     const validation = field.validation || {}
 
     // Required validation
-    if (validation.required && (!value || value === "")) {
+    if (validation.required && (!value || value === "" || (Array.isArray(value) && value.length === 0))) {
       return `${field.label} is required`
+    }
+
+    // Lookup field validation for custom values
+    if (field.type === "lookup" && value) {
+      // Validate length for single or multiple values
+      const values = Array.isArray(value) ? value : [value]
+      if (validation.minLength) {
+        for (const val of values) {
+          if (val && val.length < validation.minLength) {
+            return `Each ${field.label} must be at least ${validation.minLength} characters`
+          }
+        }
+      }
+      if (validation.maxLength) {
+        for (const val of values) {
+          if (val && val.length > validation.maxLength) {
+            return `Each ${field.label} must be at most ${validation.maxLength} characters`
+          }
+        }
+      }
+      // Pattern validation
+      if (validation.pattern) {
+        const regex = new RegExp(validation.pattern)
+        for (const val of values) {
+          if (val && !regex.test(val)) {
+            return validation.patternMessage || `Invalid format for ${field.label}`
+          }
+        }
+      }
     }
 
     // Email validation
@@ -166,8 +195,8 @@ export default function PublicFormPage() {
       }
     }
 
-    // Pattern validation
-    if (validation.pattern && value) {
+    // Pattern validation for other fields
+    if (validation.pattern && value && field.type !== "lookup") {
       const regex = new RegExp(validation.pattern)
       if (!regex.test(value)) {
         return validation.patternMessage || "Invalid format"
@@ -180,27 +209,32 @@ export default function PublicFormPage() {
   const handleFieldChange = (fieldId: string, value: any) => {
     console.log(`Field ${fieldId} changed to:`, value)
 
-    // For lookup fields, handle the value properly
+    // For lookup fields, handle both predefined and custom values
     let storeValue = value
+    const field = form?.sections
+      .flatMap((section) => section.fields)
+      .find((f) => f.id === fieldId)
 
-    if (value && typeof value === "object") {
+    if (field?.type === "lookup" && value) {
       if (Array.isArray(value)) {
         // Multiple selection - extract store values safely
         storeValue = value.map((item) => {
           if (item && typeof item === "object") {
-            return item.storeValue !== undefined ? item.storeValue : item.label || item.value || item
+            const val = item.storeValue !== undefined ? item.storeValue : item.label || item.value || item
+            console.log(`Processing lookup multi-select value:`, { item, storeValue: val })
+            return val
           }
+          console.log(`Processing lookup multi-select raw value:`, item)
           return item
         })
-      } else if (value.storeValue !== undefined) {
+      } else if (typeof value === "object") {
         // Single selection - use store value
-        storeValue = value.storeValue
-      } else if (value.value !== undefined) {
-        // Fallback to value property
-        storeValue = value.value
-      } else if (value.label !== undefined) {
-        // Fallback to label property
-        storeValue = value.label
+        storeValue = value.storeValue !== undefined ? value.storeValue : (value.label || value.value || value)
+
+      } else {
+        // Custom value (string) from LookupField
+        console.log(`Processing lookup custom value:`, value)
+        storeValue = value
       }
     }
 

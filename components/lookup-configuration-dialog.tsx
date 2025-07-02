@@ -1,24 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
-import { Loader2, Search, Database, FileText, Folder, Globe } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Check, ChevronsUpDown, Database, FileText, Zap, Loader2, Settings, CheckSquare } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import type { FormField } from "@/types/form-builder"
 
@@ -28,363 +21,576 @@ interface LookupSource {
   type: "form" | "module" | "static"
   description?: string
   recordCount?: number
-  icon?: string
+}
+
+interface SourceField {
+  name: string
+  label: string
+  type: string
+  description?: string
+}
+
+interface SelectedField {
+  fieldName: string
+  label: string
+  displayField: string
+  valueField: string
+  storeField: string
+  multiple: boolean
+  searchable: boolean
 }
 
 interface LookupConfigurationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreateFields: (fields: Partial<FormField>[]) => void
+  onConfirm: (lookupFields: Partial<FormField>[]) => void
   sectionId: string
 }
 
 export default function LookupConfigurationDialog({
   open,
   onOpenChange,
-  onCreateFields,
+  onConfirm,
   sectionId,
 }: LookupConfigurationDialogProps) {
   const { toast } = useToast()
-  const [step, setStep] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState<"source" | "fields" | "configure">("source")
   const [sources, setSources] = useState<LookupSource[]>([])
   const [selectedSource, setSelectedSource] = useState<LookupSource | null>(null)
-  const [availableFields, setAvailableFields] = useState<string[]>([])
-  const [selectedFields, setSelectedFields] = useState<string[]>([])
-  const [fieldMappings, setFieldMappings] = useState<Record<string, any>>({})
-  const [searchTerm, setSearchTerm] = useState("")
+  const [sourceFields, setSourceFields] = useState<SourceField[]>([])
+  const [selectedFields, setSelectedFields] = useState<SelectedField[]>([])
+  const [loadingSources, setLoadingSources] = useState(false)
+  const [loadingFields, setLoadingFields] = useState(false)
+  const [sourceOpen, setSourceOpen] = useState(false)
 
-  // Fetch lookup sources when dialog opens
+  // Load sources when dialog opens
   useEffect(() => {
     if (open) {
-      fetchSources()
-      setStep(1)
-      setSelectedSource(null)
-      setSelectedFields([])
-      setFieldMappings({})
+      loadSources()
+      resetDialog()
     }
   }, [open])
 
-  // Fetch available fields when source is selected
+  // Load fields when source changes
   useEffect(() => {
     if (selectedSource) {
-      fetchSourceFields(selectedSource.id)
+      loadSourceFields()
     }
   }, [selectedSource])
 
-  const fetchSources = async () => {
-    setLoading(true)
+  const resetDialog = () => {
+    setStep("source")
+    setSelectedSource(null)
+    setSourceFields([])
+    setSelectedFields([])
+  }
+
+  const loadSources = async () => {
+    setLoadingSources(true)
     try {
       const response = await fetch("/api/lookup/sources")
-      const result = await response.json()
-
-      if (result.success) {
-        setSources(result.data)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setSources(result.data || [])
+        } else {
+          throw new Error(result.message || "Failed to load sources")
+        }
       } else {
-        throw new Error(result.error)
+        throw new Error("Failed to fetch sources")
       }
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error loading sources:", error)
       toast({
         title: "Error",
-        description: "Failed to fetch lookup sources",
+        description: "Failed to load lookup sources",
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      setLoadingSources(false)
     }
   }
 
-  const fetchSourceFields = async (sourceId: string) => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/lookup/fields?sourceId=${sourceId}`)
-      const result = await response.json()
+  const loadSourceFields = async () => {
+    if (!selectedSource) return
 
-      if (result.success) {
-        setAvailableFields(result.data)
+    setLoadingFields(true)
+    try {
+      const response = await fetch(`/api/lookup/fields?sourceId=${selectedSource.id}`)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          const fields = result.data || []
+          // Map field labels from getFields to SourceField objects
+          const formattedFields: SourceField[] = fields.map((label: string) => ({
+            name: label, // Use label as name for consistency with recordData keys
+            label: label, // Use the exact label from getFields
+            type: "text", // Default to text; could be enhanced if API returns field types
+            description: `Field from ${selectedSource.name}`,
+          }))
+          setSourceFields(formattedFields)
+          setStep("fields")
+        } else {
+          throw new Error(result.message || "Failed to load fields")
+        }
       } else {
-        throw new Error(result.error)
+        throw new Error("Failed to fetch fields")
       }
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error loading fields:", error)
       toast({
         title: "Error",
-        description: "Failed to fetch source fields",
+        description: "Failed to load source fields",
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      setLoadingFields(false)
     }
   }
 
   const handleSourceSelect = (source: LookupSource) => {
     setSelectedSource(source)
-    setStep(2)
+    setSourceOpen(false)
   }
 
-  const handleFieldToggle = (fieldName: string) => {
-    setSelectedFields((prev) => {
-      const newFields = prev.includes(fieldName) ? prev.filter((f) => f !== fieldName) : [...prev, fieldName]
-
-      // Initialize field mapping for new fields
-      if (!prev.includes(fieldName)) {
-        setFieldMappings((prevMappings) => ({
-          ...prevMappings,
-          [fieldName]: {
-            display: fieldName,
-            value: "id",
-            store: fieldName,
-          },
-        }))
+  const handleFieldToggle = (field: SourceField, checked: boolean) => {
+    if (checked) {
+      const newField: SelectedField = {
+        fieldName: field.name,
+        label: field.label,
+        displayField: field.name, // Default to the same field for display
+        valueField: "id", // Default to 'id' for value
+        storeField: field.name, // Store the same field
+        multiple: false,
+        searchable: true,
       }
-
-      return newFields
-    })
+      setSelectedFields((prev) => [...prev, newField])
+    } else {
+      setSelectedFields((prev) => prev.filter((f) => f.fieldName !== field.name))
+    }
   }
 
-  const handleFieldMappingChange = (fieldName: string, mappingType: string, value: string) => {
-    setFieldMappings((prev) => ({
-      ...prev,
-      [fieldName]: {
-        ...prev[fieldName],
-        [mappingType]: value,
-      },
-    }))
+  const updateSelectedField = (fieldName: string, updates: Partial<SelectedField>) => {
+    setSelectedFields((prev) => prev.map((field) => (field.fieldName === fieldName ? { ...field, ...updates } : field)))
   }
 
-  const handleCreateFields = () => {
+  const handleConfirm = () => {
     if (!selectedSource || selectedFields.length === 0) {
       toast({
-        title: "Error",
-        description: "Please select at least one field",
+        title: "Invalid Selection",
+        description: "Please select a source and at least one field",
         variant: "destructive",
       })
       return
     }
 
-    const newFields: Partial<FormField>[] = selectedFields.map((fieldName, index) => ({
-      id: `lookup_${selectedSource.id}_${fieldName}_${Date.now()}_${index}`,
+    // Create lookup field configurations
+    const lookupFields: Partial<FormField>[] = selectedFields.map((field, index) => ({
+      sectionId: sectionId,
       type: "lookup",
-      label: fieldName.charAt(0).toUpperCase() + fieldName.slice(1),
-      placeholder: `Select ${fieldName}...`,
-      description: `Lookup field for ${fieldName} from ${selectedSource.name}`,
-      sectionId,
-      order: index,
+      label: field.label,
+      placeholder: `Select ${field.label.toLowerCase()}...`,
+      description: `Lookup field for ${field.label} from ${selectedSource.name}`,
+      defaultValue: "",
+      options: [],
+      validation: { required: false },
       visible: true,
       readonly: false,
-      validation: {
-        required: false,
-      },
+      width: "full" as const,
+      order: index,
       lookup: {
         sourceId: selectedSource.id,
-        multiple: false,
-        searchable: true,
-        searchPlaceholder: `Search ${fieldName}...`,
-        fieldMapping: fieldMappings[fieldName] || {
-          display: fieldName,
-          value: "id",
-          store: fieldName,
+        sourceType: selectedSource.type,
+        multiple: field.multiple,
+        searchable: field.searchable,
+        searchPlaceholder: `Search ${field.label.toLowerCase()}...`,
+        fieldMapping: {
+          display: field.displayField,
+          value: field.valueField,
+          store: field.storeField,
+          description: "description",
         },
       },
     }))
 
-    onCreateFields(newFields)
+    onConfirm(lookupFields)
     onOpenChange(false)
+    resetDialog()
 
     toast({
-      title: "Success!",
-      description: `Created ${newFields.length} lookup field${newFields.length > 1 ? "s" : ""}`,
+      title: "Success",
+      description: `Created ${lookupFields.length} lookup field(s)`,
     })
   }
 
-  const getSourceIcon = (source: LookupSource) => {
-    switch (source.type) {
+  const getSourceIcon = (type: string) => {
+    switch (type) {
       case "form":
-        return <FileText className="h-5 w-5" />
+        return <FileText className="h-4 w-4" />
       case "module":
-        return <Folder className="h-5 w-5" />
+        return <Database className="h-4 w-4" />
       case "static":
-        return <Globe className="h-5 w-5" />
+        return <Zap className="h-4 w-4" />
       default:
-        return <Database className="h-5 w-5" />
+        return <Database className="h-4 w-4" />
     }
   }
 
-  const filteredSources = sources.filter(
-    (source) =>
-      source.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      source.description?.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const getSourceTypeLabel = (type: string) => {
+    switch (type) {
+      case "form":
+        return "Form"
+      case "module":
+        return "Module"
+      case "static":
+        return "Built-in"
+      default:
+        return "Unknown"
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Configure Lookup Fields</DialogTitle>
-          <DialogDescription>
-            Select a data source and choose fields to create lookup fields automatically
-          </DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            Configure Lookup Fields
+            <Badge variant="secondary">Step {step === "source" ? "1" : step === "fields" ? "2" : "3"} of 3</Badge>
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden">
-          {step === 1 && (
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search sources..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
-                />
+          {/* Step 1: Source Selection */}
+          {step === "source" && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Select Data Source</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Choose the form, module, or built-in source for your lookup fields
+                </p>
               </div>
 
-              <ScrollArea className="h-[400px]">
-                {loading ? (
-                  <div className="flex items-center justify-center h-32">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {filteredSources.map((source) => (
-                      <Card
-                        key={source.id}
-                        className="cursor-pointer hover:bg-accent transition-colors"
-                        onClick={() => handleSourceSelect(source)}
-                      >
-                        <CardHeader className="pb-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              {getSourceIcon(source)}
-                              <CardTitle className="text-sm">{source.name}</CardTitle>
-                              <Badge variant="outline" className="text-xs">
-                                {source.type}
-                              </Badge>
-                            </div>
-                            <Badge variant="secondary" className="text-xs">
-                              {source.recordCount || 0} records
-                            </Badge>
+              <div className="space-y-4">
+                <Label>Data Source</Label>
+                <Popover open={sourceOpen} onOpenChange={setSourceOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={sourceOpen}
+                      className="w-full justify-between h-auto p-4 bg-transparent"
+                      disabled={loadingSources}
+                    >
+                      {selectedSource ? (
+                        <div className="flex items-center gap-3 flex-1">
+                          {getSourceIcon(selectedSource.type)}
+                          <div className="text-left">
+                            <div className="font-medium">{selectedSource.name}</div>
+                            <div className="text-sm text-muted-foreground">{selectedSource.description}</div>
                           </div>
-                        </CardHeader>
-                        {source.description && (
-                          <CardContent className="pt-0">
-                            <CardDescription className="text-xs">{source.description}</CardDescription>
-                          </CardContent>
+                          <Badge variant="secondary" className="ml-auto">
+                            {getSourceTypeLabel(selectedSource.type)}
+                          </Badge>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Select data source...</span>
+                      )}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search data sources..." />
+                      <CommandList>
+                        {loadingSources ? (
+                          <CommandEmpty>
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                            Loading sources...
+                          </CommandEmpty>
+                        ) : sources.length === 0 ? (
+                          <CommandEmpty>No data sources found.</CommandEmpty>
+                        ) : (
+                          <>
+                            <CommandGroup heading="Forms">
+                              {sources
+                                .filter((source) => source.type === "form")
+                                .map((source) => (
+                                  <CommandItem
+                                    key={source.id}
+                                    value={source.id}
+                                    onSelect={() => handleSourceSelect(source)}
+                                    className="p-3"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        selectedSource?.id === source.id ? "opacity-100" : "opacity-0",
+                                      )}
+                                    />
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <FileText className="h-4 w-4" />
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">{source.name}</span>
+                                        <span className="text-xs text-muted-foreground">{source.description}</span>
+                                      </div>
+                                      <Badge variant="outline" className="ml-auto">
+                                        {source.recordCount || 0} records
+                                      </Badge>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+
+                            <CommandGroup heading="Modules">
+                              {sources
+                                .filter((source) => source.type === "module")
+                                .map((source) => (
+                                  <CommandItem
+                                    key={source.id}
+                                    value={source.id}
+                                    onSelect={() => handleSourceSelect(source)}
+                                    className="p-3"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        selectedSource?.id === source.id ? "opacity-100" : "opacity-0",
+                                      )}
+                                    />
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <Database className="h-4 w-4" />
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">{source.name}</span>
+                                        <span className="text-xs text-muted-foreground">{source.description}</span>
+                                      </div>
+                                      <Badge variant="outline" className="ml-auto">
+                                        {source.recordCount || 0} records
+                                      </Badge>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+
+                            <CommandGroup heading="Built-in Sources">
+                              {sources
+                                .filter((source) => source.type === "static")
+                                .map((source) => (
+                                  <CommandItem
+                                    key={source.id}
+                                    value={source.id}
+                                    onSelect={() => handleSourceSelect(source)}
+                                    className="p-3"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        selectedSource?.id === source.id ? "opacity-100" : "opacity-0",
+                                      )}
+                                    />
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <Zap className="h-4 w-4" />
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">{source.name}</span>
+                                        <span className="text-xs text-muted-foreground">{source.description}</span>
+                                      </div>
+                                      <Badge variant="outline" className="ml-auto">
+                                        {source.recordCount || 0} items
+                                      </Badge>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </>
                         )}
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {selectedSource && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      {getSourceIcon(selectedSource.type)}
+                      {selectedSource.name}
+                      <Badge variant="secondary">{getSourceTypeLabel(selectedSource.type)}</Badge>
+                    </CardTitle>
+                    <CardDescription>{selectedSource.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        {selectedSource.recordCount || 0} {selectedSource.type === "static" ? "items" : "records"} available
+                      </span>
+                      <Button onClick={() => setStep("fields")} disabled={loadingFields}>
+                        {loadingFields ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Loading Fields...
+                          </>
+                        ) : (
+                          "Continue to Field Selection"
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
 
-          {step === 2 && selectedSource && (
-            <div className="space-y-4">
+          {/* Step 2: Field Selection */}
+          {step === "fields" && selectedSource && (
+            <div className="space-y-6">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  {getSourceIcon(selectedSource)}
-                  <h3 className="font-semibold">{selectedSource.name}</h3>
-                  <Badge variant="outline">{selectedSource.type}</Badge>
+                <div>
+                  <h3 className="text-lg font-semibold">Select Fields</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Choose which fields from {selectedSource.name} to create lookup fields for
+                  </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setStep(1)}>
-                  Change Source
+                <Button variant="outline" onClick={() => setStep("source")}>
+                  Back to Source
                 </Button>
               </div>
 
-              <Separator />
-
-              <div>
-                <Label className="text-sm font-medium">Select Fields ({selectedFields.length} selected)</Label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Choose which fields you want to create lookup fields for
-                </p>
-
-                <ScrollArea className="h-[300px]">
-                  {loading ? (
-                    <div className="flex items-center justify-center h-32">
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {availableFields.map((fieldName) => (
-                        <div key={fieldName} className="space-y-2">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id={fieldName}
-                              checked={selectedFields.includes(fieldName)}
-                              onCheckedChange={() => handleFieldToggle(fieldName)}
-                            />
-                            <Label htmlFor={fieldName} className="flex-1 text-sm">
-                              {fieldName}
+              <ScrollArea className="h-96 border rounded-lg p-4">
+                {sourceFields.length === 0 && loadingFields ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span className="ml-2">Loading fields...</span>
+                  </div>
+                ) : sourceFields.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    No fields available for this source
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {sourceFields.map((field) => {
+                      const isSelected = selectedFields.some((f) => f.fieldName === field.name)
+                      return (
+                        <div key={field.name} className="flex items-center space-x-3 p-3 border rounded-lg">
+                          <Checkbox
+                            id={field.name}
+                            checked={isSelected}
+                            onCheckedChange={(checked) => handleFieldToggle(field, checked as boolean)}
+                          />
+                          <div className="flex-1">
+                            <Label htmlFor={field.name} className="font-medium cursor-pointer">
+                              {field.label}
                             </Label>
+                            <p className="text-sm text-muted-foreground">{field.description}</p>
                           </div>
-
-                          {selectedFields.includes(fieldName) && (
-                            <Card className="ml-6 p-3">
-                              <div className="grid grid-cols-3 gap-2">
-                                <div>
-                                  <Label className="text-xs">Display Field</Label>
-                                  <Select
-                                    value={fieldMappings[fieldName]?.display || fieldName}
-                                    onValueChange={(value) => handleFieldMappingChange(fieldName, "display", value)}
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {availableFields.map((field) => (
-                                        <SelectItem key={field} value={field}>
-                                          {field}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Value Field</Label>
-                                  <Select
-                                    value={fieldMappings[fieldName]?.value || "id"}
-                                    onValueChange={(value) => handleFieldMappingChange(fieldName, "value", value)}
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {availableFields.map((field) => (
-                                        <SelectItem key={field} value={field}>
-                                          {field}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Store Field</Label>
-                                  <Select
-                                    value={fieldMappings[fieldName]?.store || fieldName}
-                                    onValueChange={(value) => handleFieldMappingChange(fieldName, "store", value)}
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {availableFields.map((field) => (
-                                        <SelectItem key={field} value={field}>
-                                          {field}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-                            </Card>
-                          )}
+                          <Badge variant="outline">{field.type}</Badge>
                         </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </ScrollArea>
+
+              {selectedFields.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <CheckSquare className="h-4 w-4" />
+                      Selected Fields ({selectedFields.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {selectedFields.map((field) => (
+                        <Badge key={field.fieldName} variant="secondary">
+                          {field.label}
+                        </Badge>
                       ))}
                     </div>
-                  )}
-                </ScrollArea>
+                    <Button onClick={() => setStep("configure")} className="w-full">
+                      Configure Selected Fields
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Field Configuration */}
+          {step === "configure" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Configure Lookup Fields</h3>
+                  <p className="text-sm text-muted-foreground">Fine-tune the configuration for each lookup field</p>
+                </div>
+                <Button variant="outline" onClick={() => setStep("fields")}>
+                  Back to Fields
+                </Button>
               </div>
+
+              <ScrollArea className="h-96">
+                <div className="space-y-4">
+                  {selectedFields.map((field) => (
+                    <Card key={field.fieldName}>
+                      <CardHeader>
+                        <CardTitle className="text-base">{field.label}</CardTitle>
+                        <CardDescription>Configure lookup behavior for this field</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Display Field</Label>
+                            <select
+                              className="w-full p-2 border rounded"
+                              value={field.displayField}
+                              onChange={(e) => updateSelectedField(field.fieldName, { displayField: e.target.value })}
+                            >
+                              {sourceFields.map((f) => (
+                                <option key={f.name} value={f.name}>
+                                  {f.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Value Field</Label>
+                            <select
+                              className="w-full p-2 border rounded"
+                              value={field.valueField}
+                              onChange={(e) => updateSelectedField(field.fieldName, { valueField: e.target.value })}
+                            >
+                              {sourceFields.map((f) => (
+                                <option key={f.name} value={f.name}>
+                                  {f.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label>Allow Multiple Selection</Label>
+                          <Checkbox
+                            checked={field.multiple}
+                            onCheckedChange={(checked) =>
+                              updateSelectedField(field.fieldName, { multiple: checked as boolean })
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label>Enable Search</Label>
+                          <Checkbox
+                            checked={field.searchable}
+                            onCheckedChange={(checked) =>
+                              updateSelectedField(field.fieldName, { searchable: checked as boolean })
+                            }
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
             </div>
           )}
         </div>
@@ -393,8 +599,8 @@ export default function LookupConfigurationDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {step === 2 && (
-            <Button onClick={handleCreateFields} disabled={selectedFields.length === 0}>
+          {step === "configure" && (
+            <Button onClick={handleConfirm} disabled={selectedFields.length === 0}>
               Create {selectedFields.length} Lookup Field{selectedFields.length !== 1 ? "s" : ""}
             </Button>
           )}

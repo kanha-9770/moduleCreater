@@ -1,4 +1,5 @@
 export interface FormModule {
+  isPublished?: any
   id: string
   name: string
   description?: string | null
@@ -17,7 +18,7 @@ export interface Form {
   description?: string | null
   settings: Record<string, any>
   sections: FormSection[]
-  isPublished: boolean
+  isPublished?: boolean
   publishedAt?: Date | null
   formUrl?: string | null
   allowAnonymous: boolean
@@ -169,6 +170,7 @@ export interface LookupConfig {
 }
 
 export interface FormRecord {
+  status: string
   id: string
   formId: string
   form?: Form

@@ -128,7 +128,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
       value: "id",
       store: "name",
     }
-
     const newLookup = {
       ...currentLookup,
       fieldMapping: {
@@ -141,7 +140,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
 
   const handleSourceSelect = (sourceId: string) => {
     const source = lookupSources.find((s) => s.id === sourceId)
-
     // Reset field mapping when source changes with proper structure
     const newLookup = {
       sourceId: sourceId,
@@ -155,7 +153,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
         description: "description",
       },
     }
-
     handleFieldUpdate({ lookup: newLookup })
     setSourceOpen(false)
   }
@@ -421,7 +418,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                                     </CommandItem>
                                   ))}
                               </CommandGroup>
-
                               <CommandGroup heading="Modules">
                                 {lookupSources
                                   .filter((source) => source.type === "module")
@@ -450,7 +446,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                                     </CommandItem>
                                   ))}
                               </CommandGroup>
-
                               <CommandGroup heading="Built-in Sources">
                                 {lookupSources
                                   .filter((source) => source.type === "static")
@@ -625,7 +620,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                           onCheckedChange={(checked) => handleLookupChange("multiple", checked)}
                         />
                       </div>
-
                       <div className="flex items-center justify-between">
                         <div className="space-y-0.5">
                           <Label>Searchable</Label>
@@ -636,7 +630,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                           onCheckedChange={(checked) => handleLookupChange("searchable", checked)}
                         />
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor="searchPlaceholder">Search Placeholder</Label>
                         <Input
@@ -798,7 +791,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                         </div>
                       ))}
                     </div>
-
                     <Button onClick={addOption} variant="outline" className="w-full bg-transparent">
                       <Plus className="h-4 w-4 mr-2" />
                       Add Option
@@ -855,9 +847,7 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       rows={3}
                     />
                   </div>
-
                   <Separator />
-
                   <div className="space-y-2">
                     <Label>Field Properties (JSON)</Label>
                     <Textarea
