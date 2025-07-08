@@ -33,6 +33,11 @@ export interface Form {
     formId: string
     storageTable: string
   } | null
+  tableMapping?: {
+    id: string
+    formId: string
+    storageTable: string
+  } | null
   sections: FormSection[]
   isPublished?: boolean
   publishedAt?: Date | null
@@ -185,11 +190,13 @@ export interface LookupConfig {
   filters?: Record<string, any>
 }
 
-export interface FormRecord {
   id: string
   formId: string
   form?: Form
   recordData: Record<string, any>
+  employee_id?: string | null
+  amount?: number | null
+  date?: Date | null
   employee_id?: string | null
   amount?: number | null
   date?: Date | null
@@ -198,6 +205,32 @@ export interface FormRecord {
   ipAddress?: string | null
   userAgent?: string | null
   status: string
+  status: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+// Specialized record types for different tables
+export interface FormRecord1 extends FormRecord {}
+export interface FormRecord2 extends FormRecord {}
+export interface FormRecord3 extends FormRecord {}
+export interface FormRecord4 extends FormRecord {}
+export interface FormRecord5 extends FormRecord {}
+export interface FormRecord6 extends FormRecord {}
+export interface FormRecord7 extends FormRecord {}
+export interface FormRecord8 extends FormRecord {}
+export interface FormRecord9 extends FormRecord {}
+export interface FormRecord10 extends FormRecord {}
+export interface FormRecord11 extends FormRecord {}
+export interface FormRecord12 extends FormRecord {}
+export interface FormRecord13 extends FormRecord {}
+export interface FormRecord14 extends FormRecord {}
+export interface FormRecord15 extends FormRecord {}
+
+export interface FormTableMapping {
+  id: string
+  formId: string
+  storageTable: string
   createdAt: Date
   updatedAt: Date
 }

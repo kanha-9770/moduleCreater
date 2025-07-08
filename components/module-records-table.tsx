@@ -101,11 +101,11 @@ export default function ModuleRecordsTable({
       const params = new URLSearchParams({
         page: page.toString(),
         limit: "20",
-        search,
-        status,
-        employeeId,
-        dateFrom: dateFrom ? dateFrom : undefined,
-        dateTo: dateTo ? dateTo : undefined
+        search: search,
+        status: status,
+        employeeId: employeeId,
+        dateFrom: dateFrom || "",
+        dateTo: dateTo || ""
       })
 
       const response = await fetch(`/api/modules/${moduleId}/records?${params}`)
@@ -443,9 +443,12 @@ export default function ModuleRecordsTable({
                     <TableHead className="font-semibold">
                       <div className="flex items-center gap-2">
                         <Hash className="w-4 h-4" />
-                        Record ID
+                        ID
                       </div>
                     </TableHead>
+                    <TableHead className="font-semibold">Employee ID</TableHead>
+                    <TableHead className="font-semibold">Amount</TableHead>
+                    <TableHead className="font-semibold">Date</TableHead>
                     {tableColumns.map((column) => (
                       <TableHead key={column} className="font-semibold">
                         {formatFieldName(column)}
@@ -475,13 +478,6 @@ export default function ModuleRecordsTable({
                           {record.recordId}
                         </Badge>
                       </TableCell>
-                      {tableColumns.map((column) => (
-                        <TableCell key={column} className="max-w-48">
-                          <div className="truncate" title={getFieldValue(record.recordData, column)}>
-                            {getFieldValue(record.recordData, column)}
-                          </div>
-                        </TableCell>
-                      ))}
                       <TableCell>
                         {record.employee_id && (
                           <div className="text-sm font-medium">{record.employee_id}</div>
@@ -497,6 +493,13 @@ export default function ModuleRecordsTable({
                           <div className="text-sm">{new Date(record.date).toLocaleDateString()}</div>
                         )}
                       </TableCell>
+                      {tableColumns.map((column) => (
+                        <TableCell key={column} className="max-w-48">
+                          <div className="truncate" title={getFieldValue(record.recordData, column)}>
+                            {getFieldValue(record.recordData, column)}
+                          </div>
+                        </TableCell>
+                      ))}
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <User className="w-4 h-4 text-gray-400" />
