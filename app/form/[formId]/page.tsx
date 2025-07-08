@@ -299,6 +299,11 @@ export default function PublicFormPage() {
     setSubmitting(true)
 
     try {
+      // Extract specialized fields if present
+      const employeeId = formData.employee_id || formData.employeeId || null
+      const amount = formData.amount ? parseFloat(formData.amount) : null
+      const date = formData.date ? new Date(formData.date) : null
+      
       console.log("Sending form submission...")
       const response = await fetch(`/api/forms/${formId}/submit`, {
         method: "POST",
@@ -306,6 +311,9 @@ export default function PublicFormPage() {
         body: JSON.stringify({
           recordData: formData,
           submittedBy: "anonymous",
+          employeeId,
+          amount,
+          date,
           userAgent: navigator.userAgent,
         }),
       })

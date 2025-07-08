@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { DatabaseService } from "@/lib/database-service";
 import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
 
@@ -190,14 +190,15 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
       .update(JSON.stringify(recordData))
       .digest("hex");
 
-    const existingRecord = await prisma.formRecord.findFirst({
-      where: {
-        formId,
-        recordData: {
-          equals: recordData as Prisma.InputJsonValue,
-        },
-      },
-    });
+    // Check for duplicate submissions by querying the appropriate table
+    const tableName = await DatabaseService.getFormRecordTable(formId);
+    let existingRecord = null;
+    
+    // This is a simplified check - in production you might want a more robust solution
+    const records = await DatabaseService.getFormRecords(formId, { limit: 100 });
+    existingRecord = records.find(record => 
+      createHash("sha256").update(JSON.stringify(record.recordData)).digest("hex") === recordDataHash
+    );
 
     if (existingRecord) {
       console.log("Duplicate form record detected", { recordId: existingRecord.id });
@@ -243,26 +244,30 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
     console.log("Enriched record data", { enrichedRecordData });
 
     // Create the form record
-    const record = await prisma.formRecord.create({
-      data: {
-        formId,
-        recordData: enrichedRecordData as Prisma.InputJsonValue,
-        submittedBy: "anonymous",
-        submittedAt: new Date(),
-      },
-    });
+    // Extract specialized fields if present
+    const employeeId = recordData.employee_id || recordData.employeeId || null;
+    const amount = recordData.amount ? parseFloat(recordData.amount) : null;
+    const date = recordData.date ? new Date(recordData.date) : null;
+    
+    const record = await DatabaseService.createFormRecord(
+      formId,
+      enrichedRecordData as Prisma.InputJsonValue,
+      "anonymous",
+      employeeId,
+      amount,
+      date
+    );
 
     console.log("Form record created successfully", { recordId: record.id });
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        id: record.id,
-      },
-      message: "Form submitted successfully",
-    });
-  } catch (error: any) {
-    console.error("Form submission error", { error: error.message, stack: error.stack });
+    await DatabaseService.trackFormEvent(
+      formId,
+      "submit",
+      {
+        recordId: record.id,
+        timestamp: new Date().toISOString(),
+      }
+    );
     return NextResponse.json(
       {
         success: false,

@@ -33,6 +33,9 @@ interface DynamicRecord {
   recordId: string
   recordType: string
   recordData: any
+  employee_id?: string
+  amount?: number
+  date?: Date
   submittedBy: string
   submittedAt: string
   status: string
@@ -63,6 +66,9 @@ export default function ModuleRecordsTable({
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("active")
   const [page, setPage] = useState(1)
+  const [employeeId, setEmployeeId] = useState("")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
   const [totalPages, setTotalPages] = useState(initialTotalPages)
   const [totalRecords, setTotalRecords] = useState(initialTotalRecords)
   const [selectedRecord, setSelectedRecord] = useState<DynamicRecord | null>(null)
@@ -97,6 +103,9 @@ export default function ModuleRecordsTable({
         limit: "20",
         search,
         status,
+        employeeId,
+        dateFrom: dateFrom ? dateFrom : undefined,
+        dateTo: dateTo ? dateTo : undefined
       })
 
       const response = await fetch(`/api/modules/${moduleId}/records?${params}`)
@@ -340,6 +349,31 @@ export default function ModuleRecordsTable({
                 />
               </div>
             </div>
+            <div className="flex-1">
+              <div className="relative">
+                <Input
+                  placeholder="Employee ID..."
+                  value={employeeId}
+                  onChange={(e) => setEmployeeId(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex-1">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder="Date From"
+              />
+            </div>
+            <div className="flex-1">
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                placeholder="Date To"
+              />
+            </div>
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Status" />
@@ -449,6 +483,21 @@ export default function ModuleRecordsTable({
                         </TableCell>
                       ))}
                       <TableCell>
+                        {record.employee_id && (
+                          <div className="text-sm font-medium">{record.employee_id}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {record.amount && (
+                          <div className="text-sm font-medium">{record.amount}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {record.date && (
+                          <div className="text-sm">{new Date(record.date).toLocaleDateString()}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-2">
                           <User className="w-4 h-4 text-gray-400" />
                           {record.submittedBy}
@@ -510,6 +559,24 @@ export default function ModuleRecordsTable({
 
                                   <Separator />
 
+                                  {record.employee_id && (
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-600">Employee ID</p>
+                                      <p>{record.employee_id}</p>
+                                    </div>
+                                  )}
+                                  {record.amount && (
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-600">Amount</p>
+                                      <p>{record.amount}</p>
+                                    </div>
+                                  )}
+                                  {record.date && (
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-600">Date</p>
+                                      <p>{new Date(record.date).toLocaleString()}</p>
+                                    </div>
+                                  )}
                                   <div>
                                     <h4 className="font-semibold mb-3">Form Data</h4>
                                     <div className="space-y-3">

@@ -6,7 +6,8 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "generate-tables": "ts-node scripts/generate-record-tables.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "latest",

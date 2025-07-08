@@ -1,8 +1,15 @@
 "use server"
 
-import { prisma } from "@/lib/prisma"
+import { DatabaseService } from "@/lib/database-service"
 
-export async function handleSubmit(formId: string, formData: FormData, userAgent: string) {
+export async function handleSubmit(
+  formId: string, 
+  formData: FormData, 
+  userAgent: string,
+  employeeId?: string,
+  amount?: number,
+  date?: Date
+) {
   try {
     const recordData: Record<string, any> = {}
     for (const [key, value] of formData.entries()) {
@@ -13,25 +20,25 @@ export async function handleSubmit(formId: string, formData: FormData, userAgent
       }
     }
 
-    const result = await prisma.formRecord.create({
-      data: {
-        formId,
-        recordData,
-        submittedBy: "anonymous",
-        userAgent,
-      },
-    })
+    const result = await DatabaseService.createFormRecord(
+      formId,
+      recordData,
+      "anonymous",
+      employeeId,
+      amount,
+      date
+    )
 
-    await prisma.formEvent.create({
-      data: {
-        formId,
-        eventType: "submit",
-        payload: {
-          recordId: result.id,
-          timestamp: new Date().toISOString(),
-        },
+    await DatabaseService.trackFormEvent(
+      formId,
+      "submit",
+      {
+        recordId: result.id,
+        timestamp: new Date().toISOString(),
       },
-    })
+      undefined,
+      userAgent
+    )
 
     return { success: true, data: result }
   } catch (error: any) {

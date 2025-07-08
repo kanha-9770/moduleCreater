@@ -12,8 +12,11 @@ export async function GET(request: NextRequest, { params }: { params: { formId: 
     const search = searchParams.get("search") || undefined
     const sortBy = searchParams.get("sortBy") || "submittedAt"
     const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc"
+    const employeeId = searchParams.get("employeeId") || undefined
+    const dateFrom = searchParams.get("dateFrom") ? new Date(searchParams.get("dateFrom") as string) : undefined
+    const dateTo = searchParams.get("dateTo") ? new Date(searchParams.get("dateTo") as string) : undefined
 
-    console.log("API: Query params:", { page, limit, status, search, sortBy, sortOrder })
+    console.log("API: Query params:", { page, limit, status, search, sortBy, sortOrder, employeeId, dateFrom, dateTo })
 
     const records = await DatabaseService.getFormRecords(params.formId, {
       page,
@@ -22,6 +25,9 @@ export async function GET(request: NextRequest, { params }: { params: { formId: 
       search,
       sortBy,
       sortOrder,
+      employeeId,
+      dateFrom,
+      dateTo
     })
 
     const total = await DatabaseService.getFormSubmissionCount(params.formId)
@@ -48,7 +54,20 @@ export async function GET(request: NextRequest, { params }: { params: { formId: 
 export async function POST(request: NextRequest, { params }: { params: { formId: string } }) {
   try {
     const body = await request.json()
-    const record = await DatabaseService.createFormRecord(params.formId, body.recordData, body.submittedBy)
+    
+    // Extract specialized fields if present
+    const employeeId = body.employeeId || body.employee_id || null;
+    const amount = body.amount ? parseFloat(body.amount) : null;
+    const date = body.date ? new Date(body.date) : null;
+    
+    const record = await DatabaseService.createFormRecord(
+      params.formId, 
+      body.recordData, 
+      body.submittedBy,
+      employeeId,
+      amount,
+      date
+    )
 
     return NextResponse.json({ success: true, data: record })
   } catch (error: any) {

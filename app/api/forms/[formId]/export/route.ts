@@ -12,7 +12,12 @@ export async function GET(request: Request, { params }: { params: { formId: stri
       return NextResponse.json({ success: false, error: "Form not found" }, { status: 404 })
     }
 
-    const records = await DatabaseService.getFormRecords(params.formId)
+    // Get all records for export (no pagination)
+    const records = await DatabaseService.getFormRecords(params.formId, { 
+      limit: 10000, // Large limit for export
+      sortBy: "submittedAt",
+      sortOrder: "desc"
+    })
 
     if (format === "json") {
       // Export as JSON
@@ -59,6 +64,9 @@ export async function GET(request: Request, { params }: { params: { formId: stri
       allKeys.add("Record ID")
       allKeys.add("Submitted By")
       allKeys.add("Submitted At")
+      allKeys.add("Employee ID")
+      allKeys.add("Amount")
+      allKeys.add("Date")
 
       const headers = Array.from(allKeys)
       const csvRows = [headers.join(",")]
@@ -75,6 +83,14 @@ export async function GET(request: Request, { params }: { params: { formId: stri
             value = record.submittedBy || ""
           } else if (header === "Submitted At") {
             value = record.submittedAt?.toISOString() || ""
+          } else if (header === "Employee ID") {
+            value = record.employee_id || ""
+          } else if (header === "Amount") {
+            value = record.amount?.toString() || ""
+          } else if (header === "Date") {
+            value = record.date?.toISOString() || ""
+          } else if (header === "Status") {
+            value = record.status || ""
           } else {
             const fieldValue = recordData[header]
 
