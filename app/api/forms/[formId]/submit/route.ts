@@ -68,59 +68,7 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
     }
 
     // Fetch form with sections, fields, and subforms
-    const form = await prisma.form.findUnique({
-      where: { id: formId },
-      include: {
-        sections: {
-          include: {
-            fields: {
-              select: {
-                id: true,
-                label: true,
-                type: true,
-                sectionId: true,
-                subformId: true,
-                description: true,
-                placeholder: true,
-                options: true,
-                validation: true,
-                sourceModule: true,
-                sourceForm: true,
-                displayField: true,
-                valueField: true,
-                multiple: true,
-                searchable: true,
-                filters: true,
-              },
-            },
-            subforms: {
-              include: {
-                fields: {
-                  select: {
-                    id: true,
-                    label: true,
-                    type: true,
-                    sectionId: true,
-                    subformId: true,
-                    description: true,
-                    placeholder: true,
-                    options: true,
-                    validation: true,
-                    sourceModule: true,
-                    sourceForm: true,
-                    displayField: true,
-                    valueField: true,
-                    multiple: true,
-                    searchable: true,
-                    filters: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+    const form = await DatabaseService.getForm(formId);
 
     if (!form) {
       console.log("Form not found", { formId });
@@ -190,23 +138,7 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
       .update(JSON.stringify(recordData))
       .digest("hex");
 
-    // Check for duplicate submissions by querying the appropriate table
-    const tableName = await DatabaseService.getFormRecordTable(formId);
-    let existingRecord = null;
-    
-    // This is a simplified check - in production you might want a more robust solution
-    const records = await DatabaseService.getFormRecords(formId, { limit: 100 });
-    existingRecord = records.find(record => 
-      createHash("sha256").update(JSON.stringify(record.recordData)).digest("hex") === recordDataHash
-    );
-
-    if (existingRecord) {
-      console.log("Duplicate form record detected", { recordId: existingRecord.id });
-      return NextResponse.json(
-        { error: "Duplicate submission detected", recordId: existingRecord.id },
-        { status: 409 }
-      );
-    }
+    // This check is now handled by the DatabaseService
 
     // Transform recordData to include metadata
     const enrichedRecordData: EnrichedRecordData = Object.fromEntries(
@@ -217,7 +149,7 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
         if (field.type === "lookup") {
           if (Array.isArray(value)) {
             storeValue = value.map((item) =>
-              item && typeof item === "object" && item.storeValue !== undefined ? item.storeValue : item
+              item && typeof item === "object" && (item as any).storeValue !== undefined ? (item as any).storeValue : item
             );
           } else if (value && typeof value === "object" && (value as any).storeValue !== undefined) {
             storeValue = (value as any).storeValue;
@@ -243,16 +175,16 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
 
     console.log("Enriched record data", { enrichedRecordData });
 
-    // Create the form record
     // Extract specialized fields if present
-    const employeeId = recordData.employee_id || recordData.employeeId || null;
-    const amount = recordData.amount ? parseFloat(recordData.amount) : null;
-    const date = recordData.date ? new Date(recordData.date) : null;
-    
+    const employeeId = body.employeeId || body.employee_id || recordData.employee_id || recordData.employeeId || null;
+    const amount = body.amount || recordData.amount ? parseFloat(String(body.amount || recordData.amount)) : null;
+    const date = body.date || recordData.date ? new Date(String(body.date || recordData.date)) : null;
+
+    // Create the form record using the appropriate table
     const record = await DatabaseService.createFormRecord(
       formId,
       enrichedRecordData as Prisma.InputJsonValue,
-      "anonymous",
+      body.submittedBy || "anonymous",
       employeeId,
       amount,
       date
@@ -260,14 +192,27 @@ export async function POST(request: NextRequest, { params }: { params: { formId:
 
     console.log("Form record created successfully", { recordId: record.id });
 
+    // Track the submission event
     await DatabaseService.trackFormEvent(
       formId,
       "submit",
       {
         recordId: record.id,
         timestamp: new Date().toISOString(),
-      }
+      },
+      undefined,
+      body.userAgent
     );
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: record.id,
+      },
+      message: "Form submitted successfully",
+    });
+  } catch (error: any) {
+    console.error("Form submission error", { error: error.message, stack: error.stack });
     return NextResponse.json(
       {
         success: false,

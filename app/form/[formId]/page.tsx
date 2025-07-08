@@ -28,6 +28,9 @@ export default function PublicFormPage() {
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [employeeId, setEmployeeId] = useState<string>("")
+  const [amount, setAmount] = useState<string>("")
+  const [date, setDate] = useState<string>("")
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [completionPercentage, setCompletionPercentage] = useState(0)
@@ -305,15 +308,21 @@ export default function PublicFormPage() {
       const date = formData.date ? new Date(formData.date) : null
       
       console.log("Sending form submission...")
+      
+      // Prepare specialized fields
+      const specializedFields = {
+        employeeId: employeeId || undefined,
+        amount: amount ? parseFloat(amount) : undefined,
+        date: date ? new Date(date).toISOString() : undefined
+      }
+      
       const response = await fetch(`/api/forms/${formId}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recordData: formData,
           submittedBy: "anonymous",
-          employeeId,
-          amount,
-          date,
+          ...specializedFields,
           userAgent: navigator.userAgent,
         }),
       })
@@ -652,6 +661,42 @@ export default function PublicFormPage() {
             </div>
 
             {/* Progress Bar */}
+            {/* Specialized Fields Section */}
+            <div className="pt-6 border-t">
+              <h3 className="text-lg font-semibold mb-4">Additional Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="space-y-2">
+                  <Label htmlFor="employeeId">Employee ID</Label>
+                  <Input
+                    id="employeeId"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="Enter employee ID if applicable"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="amount">Amount</Label>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="Enter amount if applicable"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="date">Date</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+            
             <div className="mt-4">
               <div className="flex justify-between text-sm text-muted-foreground mb-2">
                 <span>Progress</span>

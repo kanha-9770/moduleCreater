@@ -3,9 +3,8 @@ import { DatabaseService } from "@/lib/database-service"
 
 export async function GET(request: Request, { params }: { params: { formId: string; recordId: string } }) {
   try {
-    // This would need to be implemented in DatabaseService
-    // For now, return a placeholder
-    return NextResponse.json({ success: false, error: "Not implemented" }, { status: 501 })
+    const record = await DatabaseService.getFormRecord(params.recordId)
+    return NextResponse.json({ success: true, data: record })
   } catch (error: any) {
     console.error("Error fetching record:", error)
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })
@@ -15,7 +14,16 @@ export async function GET(request: Request, { params }: { params: { formId: stri
 export async function PUT(request: Request, { params }: { params: { formId: string; recordId: string } }) {
   try {
     const body = await request.json()
-    const record = await DatabaseService.updateFormRecord(params.recordId, body)
+    
+    // Extract specialized fields if present
+    const updates = {
+      ...body,
+      employee_id: body.employeeId || body.employee_id || undefined,
+      amount: body.amount ? parseFloat(body.amount) : undefined,
+      date: body.date ? new Date(body.date) : undefined
+    }
+    
+    const record = await DatabaseService.updateFormRecord(params.recordId, updates)
     return NextResponse.json({ success: true, data: record })
   } catch (error: any) {
     console.error("Error updating record:", error)
