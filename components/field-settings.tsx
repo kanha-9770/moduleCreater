@@ -255,7 +255,7 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
             <TabsTrigger value="advanced">Advanced</TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="h-[600px] mt-4">
+          <ScrollArea className="h-[350px] mt-4 border rounded-lg">
             <TabsContent value="general" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -283,7 +283,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       />
                     </div>
                   </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="description">Description</Label>
                     <Textarea
@@ -294,7 +293,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       rows={3}
                     />
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="width">Width</Label>
@@ -325,7 +323,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       />
                     </div>
                   </div>
-
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label>Visible</Label>
@@ -336,7 +333,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       onCheckedChange={(checked) => handleFieldUpdate({ visible: checked })}
                     />
                   </div>
-
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label>Read Only</Label>
@@ -493,7 +489,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                           <p className="text-sm text-muted-foreground">
                             Configure which fields from the source data to use for display, value, and storage
                           </p>
-
                           {loadingFields ? (
                             <div className="flex items-center justify-center py-4">
                               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -524,7 +519,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                                 </Select>
                                 <p className="text-xs text-muted-foreground">Field to show in dropdown options</p>
                               </div>
-
                               {/* Value Field */}
                               <div className="space-y-2">
                                 <Label htmlFor="valueField" className="flex items-center gap-2">
@@ -548,7 +542,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                                 </Select>
                                 <p className="text-xs text-muted-foreground">Field to use as internal option value</p>
                               </div>
-
                               {/* Store Field */}
                               <div className="space-y-2">
                                 <Label htmlFor="storeField" className="flex items-center gap-2">
@@ -574,7 +567,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                                   Field value to actually store in record (instead of ID)
                                 </p>
                               </div>
-
                               {/* Description Field */}
                               <div className="space-y-2">
                                 <Label htmlFor="descriptionField" className="flex items-center gap-2">
@@ -607,7 +599,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                         <Separator />
                       </>
                     )}
-
                     {/* Lookup Behavior Settings */}
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
@@ -662,7 +653,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       onCheckedChange={(checked) => handleValidationChange("required", checked)}
                     />
                   </div>
-
                   {(localField.type === "text" || localField.type === "textarea") && (
                     <>
                       <div className="grid grid-cols-2 gap-4">
@@ -708,7 +698,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       </div>
                     </>
                   )}
-
                   {localField.type === "number" && (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -743,7 +732,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                       </div>
                     </div>
                   )}
-
                   <div className="space-y-2">
                     <Label htmlFor="message">Custom Error Message</Label>
                     <Input
@@ -798,7 +786,6 @@ export default function FieldSettings({ field, open, onOpenChange, onUpdate }: F
                   </CardContent>
                 </Card>
               )}
-
               {localField.type === "file" && (
                 <Card>
                   <CardHeader>

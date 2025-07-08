@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Check, ChevronsUpDown, Database, FileText, Zap, Loader2, Settings, CheckSquare } from "lucide-react"
+import { Check, ChevronsUpDown, Database, FileText, Zap, Loader2, Settings, CheckSquare, Key } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import type { FormField } from "@/types/form-builder"
@@ -21,6 +21,8 @@ interface LookupSource {
   type: "form" | "module" | "static"
   description?: string
   recordCount?: number
+  hasIdField?: boolean
+  idFieldName?: string
 }
 
 interface SourceField {
@@ -38,6 +40,7 @@ interface SelectedField {
   storeField: string
   multiple: boolean
   searchable: boolean
+  useIdField: boolean // New property for ID field configuration
 }
 
 interface LookupConfigurationDialogProps {
@@ -128,6 +131,7 @@ export default function LookupConfigurationDialog({
             type: "text", // Default to text; could be enhanced if API returns field types
             description: `Field from ${selectedSource.name}`,
           }))
+
           setSourceFields(formattedFields)
           setStep("fields")
         } else {
@@ -163,7 +167,9 @@ export default function LookupConfigurationDialog({
         storeField: field.name, // Store the same field
         multiple: false,
         searchable: true,
+        useIdField: selectedSource?.hasIdField || false, // Use ID field if available
       }
+
       setSelectedFields((prev) => [...prev, newField])
     } else {
       setSelectedFields((prev) => prev.filter((f) => f.fieldName !== field.name))
@@ -184,13 +190,32 @@ export default function LookupConfigurationDialog({
       return
     }
 
+    console.log("[Dialog] Creating lookup fields with source info:", {
+      selectedSource,
+    })
+
+    // Extract source type and ID for proper field creation
+    let sourceModule: string | undefined
+    let sourceForm: string | undefined
+
+    if (selectedSource.type === "module" && selectedSource.id.startsWith("module_")) {
+      sourceModule = selectedSource.id.replace("module_", "")
+    } else if (selectedSource.type === "form" && selectedSource.id.startsWith("form_")) {
+      sourceForm = selectedSource.id.replace("form_", "")
+    }
+
+    console.log("[Dialog] Extracted source info:", {
+      sourceModule,
+      sourceForm,
+    })
+
     // Create lookup field configurations
     const lookupFields: Partial<FormField>[] = selectedFields.map((field, index) => ({
       sectionId: sectionId,
       type: "lookup",
       label: field.label,
       placeholder: `Select ${field.label.toLowerCase()}...`,
-      description: `Lookup field for ${field.label} from ${selectedSource.name}`,
+      description: `Lookup field for ${field.label} from ${selectedSource.name}${field.useIdField ? " (with ID field for updates)" : ""}`,
       defaultValue: "",
       options: [],
       validation: { required: false },
@@ -198,12 +223,23 @@ export default function LookupConfigurationDialog({
       readonly: false,
       width: "full" as const,
       order: index,
+
+      // Add source information for middleware
+      sourceModule,
+      sourceForm,
+      displayField: field.displayField,
+      valueField: field.valueField,
+      multiple: field.multiple,
+      searchable: field.searchable,
+
       lookup: {
         sourceId: selectedSource.id,
         sourceType: selectedSource.type,
         multiple: field.multiple,
         searchable: field.searchable,
         searchPlaceholder: `Search ${field.label.toLowerCase()}...`,
+        useIdField: field.useIdField,
+        idFieldName: selectedSource.idFieldName,
         fieldMapping: {
           display: field.displayField,
           value: field.valueField,
@@ -213,13 +249,15 @@ export default function LookupConfigurationDialog({
       },
     }))
 
+    console.log("[Dialog] Final lookup fields configuration:", lookupFields)
+
     onConfirm(lookupFields)
     onOpenChange(false)
     resetDialog()
 
     toast({
       title: "Success",
-      description: `Created ${lookupFields.length} lookup field(s)`,
+      description: `Created ${lookupFields.length} lookup field(s)${selectedFields.some((f) => f.useIdField) ? " with ID field support" : ""}`,
     })
   }
 
@@ -286,7 +324,15 @@ export default function LookupConfigurationDialog({
                         <div className="flex items-center gap-3 flex-1">
                           {getSourceIcon(selectedSource.type)}
                           <div className="text-left">
-                            <div className="font-medium">{selectedSource.name}</div>
+                            <div className="font-medium flex items-center gap-2">
+                              {selectedSource.name}
+                              {selectedSource.hasIdField && (
+                                <Badge variant="outline" className="text-xs">
+                                  <Key className="h-3 w-3 mr-1" />
+                                  ID Field
+                                </Badge>
+                              )}
+                            </div>
                             <div className="text-sm text-muted-foreground">{selectedSource.description}</div>
                           </div>
                           <Badge variant="secondary" className="ml-auto">
@@ -331,7 +377,15 @@ export default function LookupConfigurationDialog({
                                     <div className="flex items-center gap-2 flex-1">
                                       <FileText className="h-4 w-4" />
                                       <div className="flex flex-col">
-                                        <span className="font-medium">{source.name}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">{source.name}</span>
+                                          {source.hasIdField && (
+                                            <Badge variant="outline" className="text-xs">
+                                              <Key className="h-3 w-3 mr-1" />
+                                              {source.idFieldName}
+                                            </Badge>
+                                          )}
+                                        </div>
                                         <span className="text-xs text-muted-foreground">{source.description}</span>
                                       </div>
                                       <Badge variant="outline" className="ml-auto">
@@ -361,7 +415,15 @@ export default function LookupConfigurationDialog({
                                     <div className="flex items-center gap-2 flex-1">
                                       <Database className="h-4 w-4" />
                                       <div className="flex flex-col">
-                                        <span className="font-medium">{source.name}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">{source.name}</span>
+                                          {source.hasIdField && (
+                                            <Badge variant="outline" className="text-xs">
+                                              <Key className="h-3 w-3 mr-1" />
+                                              {source.idFieldName}
+                                            </Badge>
+                                          )}
+                                        </div>
                                         <span className="text-xs text-muted-foreground">{source.description}</span>
                                       </div>
                                       <Badge variant="outline" className="ml-auto">
@@ -391,7 +453,15 @@ export default function LookupConfigurationDialog({
                                     <div className="flex items-center gap-2 flex-1">
                                       <Zap className="h-4 w-4" />
                                       <div className="flex flex-col">
-                                        <span className="font-medium">{source.name}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">{source.name}</span>
+                                          {source.hasIdField && (
+                                            <Badge variant="outline" className="text-xs">
+                                              <Key className="h-3 w-3 mr-1" />
+                                              ID
+                                            </Badge>
+                                          )}
+                                        </div>
                                         <span className="text-xs text-muted-foreground">{source.description}</span>
                                       </div>
                                       <Badge variant="outline" className="ml-auto">
@@ -416,13 +486,27 @@ export default function LookupConfigurationDialog({
                       {getSourceIcon(selectedSource.type)}
                       {selectedSource.name}
                       <Badge variant="secondary">{getSourceTypeLabel(selectedSource.type)}</Badge>
+                      {selectedSource.hasIdField && (
+                        <Badge variant="outline">
+                          <Key className="h-3 w-3 mr-1" />
+                          Update Support
+                        </Badge>
+                      )}
                     </CardTitle>
-                    <CardDescription>{selectedSource.description}</CardDescription>
+                    <CardDescription>
+                      {selectedSource.description}
+                      {selectedSource.hasIdField && (
+                        <div className="mt-2 text-sm text-blue-600">
+                          ✨ This source supports record updates using the "{selectedSource.idFieldName}" field
+                        </div>
+                      )}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">
-                        {selectedSource.recordCount || 0} {selectedSource.type === "static" ? "items" : "records"} available
+                        {selectedSource.recordCount || 0} {selectedSource.type === "static" ? "items" : "records"}{" "}
+                        available
                       </span>
                       <Button onClick={() => setStep("fields")} disabled={loadingFields}>
                         {loadingFields ? (
@@ -534,7 +618,15 @@ export default function LookupConfigurationDialog({
                   {selectedFields.map((field) => (
                     <Card key={field.fieldName}>
                       <CardHeader>
-                        <CardTitle className="text-base">{field.label}</CardTitle>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          {field.label}
+                          {field.useIdField && (
+                            <Badge variant="outline" className="text-xs">
+                              <Key className="h-3 w-3 mr-1" />
+                              Update Mode
+                            </Badge>
+                          )}
+                        </CardTitle>
                         <CardDescription>Configure lookup behavior for this field</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -568,6 +660,7 @@ export default function LookupConfigurationDialog({
                             </select>
                           </div>
                         </div>
+
                         <div className="flex items-center justify-between">
                           <Label>Allow Multiple Selection</Label>
                           <Checkbox
@@ -577,6 +670,7 @@ export default function LookupConfigurationDialog({
                             }
                           />
                         </div>
+
                         <div className="flex items-center justify-between">
                           <Label>Enable Search</Label>
                           <Checkbox
@@ -586,6 +680,26 @@ export default function LookupConfigurationDialog({
                             }
                           />
                         </div>
+
+                        {selectedSource?.hasIdField && (
+                          <div className="border-t pt-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <Label>Use ID Field for Updates</Label>
+                                <p className="text-xs text-muted-foreground">
+                                  When enabled, records will be updated instead of creating new ones if the{" "}
+                                  {selectedSource.idFieldName} field matches
+                                </p>
+                              </div>
+                              <Checkbox
+                                checked={field.useIdField}
+                                onCheckedChange={(checked) =>
+                                  updateSelectedField(field.fieldName, { useIdField: checked as boolean })
+                                }
+                              />
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}

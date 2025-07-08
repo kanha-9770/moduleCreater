@@ -1,12 +1,23 @@
 export interface FormModule {
-  isPublished?: any
   id: string
   name: string
   description?: string | null
   icon?: string | null
   color?: string | null
   settings: Record<string, any>
+
+  // Hierarchical fields
+  parentId?: string | null
+  parent?: FormModule | null
+  children?: FormModule[]
+  moduleType: "master" | "child" | "standard"
+  level: number
+  path?: string | null
+  isActive: boolean
+  sortOrder: number
+
   forms: Form[]
+  isPublished?: any
   createdAt: Date
   updatedAt: Date
 }
@@ -245,8 +256,124 @@ export interface LookupOption {
   label: string
   data?: Record<string, any>
 }
+
 export const ItemTypes = {
   PALETTE_FIELD: "palette_field",
   FIELD: "field",
   SECTION: "section",
+}
+
+// Additional types for hierarchical module management
+export interface ModuleHierarchyNode extends FormModule {
+  depth: number
+  hasChildren: boolean
+  isExpanded?: boolean
+  childCount: number
+  formCount: number
+  totalRecords: number
+}
+
+export interface ModuleBreadcrumb {
+  id: string
+  name: string
+  path: string
+  level: number
+}
+
+export interface ModuleTreeItem {
+  module: FormModule
+  children: ModuleTreeItem[]
+  expanded: boolean
+}
+
+export interface HierarchicalModuleStats {
+  totalModules: number
+  masterModules: number
+  childModules: number
+  standardModules: number
+  maxDepth: number
+  totalForms: number
+  totalRecords: number
+}
+
+// Module management actions
+export type ModuleAction = 
+  | { type: "CREATE_CHILD"; parentId: string; moduleData: Partial<FormModule> }
+  | { type: "MOVE_MODULE"; moduleId: string; newParentId?: string }
+  | { type: "REORDER_MODULES"; moduleIds: string[]; parentId?: string }
+  | { type: "CONVERT_TO_MASTER"; moduleId: string }
+  | { type: "CONVERT_TO_CHILD"; moduleId: string; parentId: string }
+  | { type: "DELETE_MODULE"; moduleId: string; cascadeChildren?: boolean }
+
+// Enhanced lookup configuration for hierarchical modules
+export interface HierarchicalLookupConfig extends LookupConfig {
+  includeChildModules?: boolean
+  moduleFilter?: {
+    moduleType?: ("master" | "child" | "standard")[]
+    level?: number
+    parentId?: string
+  }
+}
+
+// Module permissions and access control
+export interface ModulePermissions {
+  moduleId: string
+  userId?: string
+  roleId?: string
+  permissions: {
+    read: boolean
+    write: boolean
+    delete: boolean
+    manageChildren: boolean
+    moveModule: boolean
+  }
+  inherited: boolean
+  inheritedFrom?: string
+}
+
+// Module settings specific to hierarchy
+export interface HierarchicalModuleSettings {
+  allowChildCreation: boolean
+  maxChildDepth?: number
+  childModuleTemplate?: Partial<FormModule>
+  inheritPermissions: boolean
+  cascadeSettings: boolean
+  displayMode: "tree" | "flat" | "breadcrumb"
+  sortChildrenBy: "name" | "createdAt" | "sortOrder" | "formCount"
+  sortDirection: "asc" | "desc"
+}
+
+// Legacy interfaces for backward compatibility
+export interface Subform {
+  id: string
+  sectionId: string
+  name: string
+  order: number
+  fields: FormField[]
+  records: SubformRecord[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface SubformRecord {
+  id: string
+  subformId: string
+  recordData: Record<string, any>
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface LookupFieldRelation {
+  id: string
+  lookupSourceId: string
+  formFieldId: string
+  formId: string
+  moduleId: string
+  displayField?: string
+  valueField?: string
+  multiple?: boolean
+  searchable?: boolean
+  filters: Record<string, any>
+  createdAt: Date
+  updatedAt: Date
 }

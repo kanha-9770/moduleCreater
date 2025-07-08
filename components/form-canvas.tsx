@@ -5,7 +5,7 @@ import { useDroppable } from "@dnd-kit/core"
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, Layers } from "lucide-react"
+import { Plus, Layers, Loader2 } from "lucide-react"
 import SectionComponent from "./section-component"
 import type { Form, FormSection, FormField } from "@/types/form-builder"
 import { useToast } from "@/hooks/use-toast"
@@ -17,6 +17,7 @@ interface FormCanvasProps {
 
 export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
   const [isAddingSection, setIsAddingSection] = useState(false)
+  const [deletingSections, setDeletingSections] = useState<Set<string>>(new Set())
   const { toast } = useToast()
 
   const { setNodeRef, isOver } = useDroppable({
@@ -104,27 +105,50 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
   }
 
   const deleteSection = async (sectionId: string) => {
+    // Add to deleting set for immediate UI feedback
+    setDeletingSections((prev) => new Set(prev).add(sectionId))
+
     try {
-      // Delete from database
+      // Delete from database with comprehensive cleanup
       const response = await fetch(`/api/sections/${sectionId}`, {
         method: "DELETE",
       })
 
-      if (response.ok) {
-        // Update local state and reorder remaining sections
-        const updatedSections = form.sections
-          .filter((section) => section.id !== sectionId)
-          .map((section, index) => ({ ...section, order: index }))
-
-        onFormUpdate({
-          ...form,
-          sections: updatedSections,
-        })
-        toast({ title: "Success", description: "Section deleted successfully" })
+      if (!response.ok) {
+        throw new Error("Failed to delete section from database")
       }
-    } catch (error) {
+
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || "Failed to delete section")
+      }
+
+      // Remove from local state immediately
+      const updatedSections = form.sections
+        .filter((section) => section.id !== sectionId)
+        .map((section, index) => ({ ...section, order: index }))
+
+      // Update form state immediately
+      onFormUpdate({
+        ...form,
+        sections: updatedSections,
+      })
+
+      console.log(`Section deleted successfully. Cleaned up ${result.deletedFieldIds?.length || 0} fields.`)
+    } catch (error: any) {
       console.error("Error deleting section:", error)
-      toast({ title: "Error", description: "Failed to delete section", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete section",
+        variant: "destructive",
+      })
+    } finally {
+      // Remove from deleting set
+      setDeletingSections((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(sectionId)
+        return newSet
+      })
     }
   }
 
@@ -166,17 +190,31 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
 
       if (response.ok) {
         // Update local state and reorder remaining fields
-        const updatedSections = form.sections.map((section) => ({
-          ...section,
-          fields: section.fields
+        const updatedSections = form.sections.map((section) => {
+          const updatedFields = section.fields
             .filter((field) => field.id !== fieldId)
-            .map((field, index) => ({ ...field, order: index })),
-        }))
+            .map((field, index) => ({ ...field, order: index }))
+
+          // Update field orders in database for this section
+          updatedFields.forEach((field) => {
+            fetch(`/api/fields/${field.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ order: field.order }),
+            })
+          })
+
+          return {
+            ...section,
+            fields: updatedFields,
+          }
+        })
 
         onFormUpdate({
           ...form,
           sections: updatedSections,
         })
+
         toast({ title: "Success", description: "Field deleted successfully" })
       }
     } catch (error) {
@@ -185,12 +223,14 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
     }
   }
 
+  // Filter out sections that are being deleted
+  const visibleSections = form.sections.filter((section) => !deletingSections.has(section.id))
+
   return (
     <div
       ref={setNodeRef}
-      className={`p-6 min-h-full transition-all duration-200 ${
-        isOver ? "bg-blue-50 border-2 border-dashed border-blue-300" : ""
-      }`}
+      className={`p-6 min-h-full transition-all duration-200 ${isOver ? "bg-blue-50 border-2 border-dashed border-blue-300" : ""
+        }`}
     >
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Form Header */}
@@ -200,10 +240,10 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
         </div>
 
         {/* Form Sections */}
-        {form.sections.length > 0 ? (
-          <SortableContext items={form.sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+        {visibleSections.length > 0 ? (
+          <SortableContext items={visibleSections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-6">
-              {form.sections
+              {visibleSections
                 .sort((a, b) => a.order - b.order)
                 .map((section) => (
                   <SectionComponent
@@ -213,6 +253,7 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
                     onDeleteSection={() => deleteSection(section.id)}
                     onUpdateField={updateField}
                     onDeleteField={deleteField}
+                    isDeleting={deletingSections.has(section.id)}
                   />
                 ))}
             </div>
@@ -232,12 +273,25 @@ export default function FormCanvas({ form, onFormUpdate }: FormCanvasProps) {
         )}
 
         {/* Add Section Button */}
-        {form.sections.length > 0 && (
+        {visibleSections.length > 0 && (
           <div className="flex justify-center pt-6">
             <Button onClick={addSection} disabled={isAddingSection} variant="outline" size="lg">
               <Plus className="w-4 h-4 mr-2" />
               {isAddingSection ? "Adding Section..." : "Add Section"}
             </Button>
+          </div>
+        )}
+
+        {/* Show deletion status */}
+        {deletingSections.size > 0 && (
+          <div className="fixed bottom-4 right-4 bg-red-100 border border-red-300 rounded-lg p-4 shadow-lg z-50">
+            <div className="flex items-center gap-3 text-red-800">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="font-medium">
+                Deleting {deletingSections.size} section{deletingSections.size !== 1 ? "s" : ""}...
+              </span>
+            </div>
+            <p className="text-sm text-red-600 mt-1">Cleaning up fields, records, and lookup relations</p>
           </div>
         )}
       </div>

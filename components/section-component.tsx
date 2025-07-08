@@ -18,6 +18,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   GripVertical,
   MoreHorizontal,
   Settings,
@@ -30,19 +40,23 @@ import {
   Check,
   X,
   Edit3,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react"
 import FieldComponent from "./field-component"
 import SectionSettings from "./section-settings"
 import type { FormSection, FormField } from "@/types/form-builder"
 import { v4 as uuidv4 } from "uuid"
+import { useToast } from "@/hooks/use-toast"
 
 interface SectionComponentProps {
   section: FormSection
   onUpdateSection: (updates: Partial<FormSection>) => void
-  onDeleteSection: () => void
+  onDeleteSection: () => Promise<void>
   onUpdateField: (fieldId: string, updates: Partial<FormField>) => Promise<void>
   onDeleteField: (fieldId: string) => void
   isOverlay?: boolean
+  isDeleting?: boolean
 }
 
 export default function SectionComponent({
@@ -52,12 +66,14 @@ export default function SectionComponent({
   onUpdateField,
   onDeleteField,
   isOverlay = false,
+  isDeleting = false,
 }: SectionComponentProps) {
   const [showSettings, setShowSettings] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState(section.title)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { toast } = useToast()
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: section.id,
@@ -65,7 +81,7 @@ export default function SectionComponent({
       type: "Section",
       section,
     },
-    disabled: isOverlay || isEditingTitle,
+    disabled: isOverlay || isEditingTitle || isDeleting,
   })
 
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
@@ -80,8 +96,9 @@ export default function SectionComponent({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.8 : 1,
+    opacity: isDragging ? 0.8 : isDeleting ? 0.3 : 1,
     zIndex: isDragging ? 1000 : 1,
+    pointerEvents: isDeleting ? ("none" as const) : ("auto" as const),
   }
 
   // Focus input when editing starts
@@ -134,34 +151,84 @@ export default function SectionComponent({
     handleTitleSave()
   }
 
-  const addField = (fieldType: string) => {
-    const newField: FormField = {
-      id: `field_${uuidv4()}`,
-      sectionId: section.id,
-      type: fieldType,
-      label: `New ${fieldType.charAt(0).toUpperCase() + fieldType.slice(1)}`,
-      placeholder: "",
-      description: "",
-      defaultValue: "",
-      options: [],
-      validation: {},
-      visible: true,
-      readonly: false,
-      width: "full",
-      order: section.fields.length,
-      conditional: null,
-      styling: null,
-      properties: null,
-      rollup: null,
-      lookup: null,
-      formula: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
+  const handleDeleteSection = async () => {
+    if (isDeleting) return
 
-    onUpdateSection({
-      fields: [...section.fields, newField],
-    })
+    try {
+      setShowDeleteDialog(false)
+
+      // Show immediate feedback
+      toast({
+        title: "Deleting section...",
+        description: `Removing "${section.title}" and cleaning up all associated data`,
+      })
+
+      // Call the parent's delete handler
+      await onDeleteSection()
+
+      toast({
+        title: "Section deleted",
+        description: `"${section.title}" and all associated data have been successfully removed`,
+      })
+    } catch (error: any) {
+      console.error("Error deleting section:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete section",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const addField = async (fieldType: string) => {
+    try {
+      const newFieldData = {
+        sectionId: section.id,
+        type: fieldType,
+        label: `New ${fieldType.charAt(0).toUpperCase() + fieldType.slice(1)}`,
+        placeholder: "",
+        description: "",
+        defaultValue: "",
+        options: [],
+        validation: {},
+        visible: true,
+        readonly: false,
+        width: "full",
+        order: section.fields.length,
+      }
+
+      const response = await fetch("/api/fields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newFieldData),
+      })
+
+      if (!response.ok) throw new Error("Failed to create field")
+
+      const result = await response.json()
+      if (result.success) {
+        const newField: FormField = {
+          ...result.data,
+          conditional: null,
+          styling: null,
+          properties: null,
+          rollup: null,
+          lookup: null,
+          formula: null,
+        }
+
+        onUpdateSection({
+          fields: [...section.fields, newField],
+        })
+
+        toast({ title: "Success", description: "Field added successfully" })
+      } else {
+        throw new Error(result.error || "Failed to create field")
+      }
+    } catch (error: any) {
+      console.error("Error adding field:", error)
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    }
   }
 
   const duplicateField = (field: FormField) => {
@@ -177,24 +244,6 @@ export default function SectionComponent({
     onUpdateSection({
       fields: [...section.fields, duplicatedField],
     })
-  }
-
-  const handleDeleteSection = async () => {
-    if (isDeleting) return
-
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this section and all its fields? This action cannot be undone.",
-    )
-    if (!confirmDelete) return
-
-    try {
-      setIsDeleting(true)
-      onDeleteSection()
-    } catch (error) {
-      console.error("Error deleting section:", error)
-    } finally {
-      setIsDeleting(false)
-    }
   }
 
   const getColumnClass = () => {
@@ -241,6 +290,24 @@ export default function SectionComponent({
     )
   }
 
+  // Show deletion state
+  if (isDeleting) {
+    return (
+      <Card className="border-2 border-red-200 bg-red-50 opacity-50 pointer-events-none">
+        <CardContent className="p-8 text-center">
+          <div className="flex items-center justify-center space-x-2 text-red-600">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="font-medium">Deleting "{section.title}"...</span>
+          </div>
+          <p className="text-sm text-red-500 mt-2">
+            Removing section, {section.fields.length} field{section.fields.length !== 1 ? "s" : ""}, and cleaning up all
+            record data
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <>
       <Card
@@ -249,11 +316,11 @@ export default function SectionComponent({
           setDroppableRef(node)
         }}
         style={style}
-        className={`group transition-all duration-300 ${isDragging
+        className={`group transition-all duration-300 ${
+          isDragging
             ? "shadow-2xl scale-105 rotate-2 border-2 border-blue-400 bg-blue-50 z-50"
             : "hover:shadow-lg border-gray-200"
-          } ${isOver ? "ring-2 ring-blue-300 ring-opacity-50" : ""} ${isDeleting ? "opacity-50 pointer-events-none" : ""
-          }`}
+        } ${isOver ? "ring-2 ring-blue-300 ring-opacity-50" : ""}`}
       >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -263,15 +330,15 @@ export default function SectionComponent({
                 <div
                   {...attributes}
                   {...listeners}
-                  className={`cursor-grab hover:cursor-grabbing p-1 rounded transition-all duration-200 ${isDragging
+                  className={`cursor-grab hover:cursor-grabbing p-1 rounded transition-all duration-200 ${
+                    isDragging
                       ? "bg-blue-500 text-white"
                       : "hover:bg-gray-100 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100"
-                    }`}
+                  }`}
                 >
                   <GripVertical className="w-4 h-4" />
                 </div>
               )}
-
               <div className="flex-1">
                 {/* Editable Title */}
                 <div className="flex items-center gap-2 mb-1">
@@ -354,7 +421,7 @@ export default function SectionComponent({
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={isDeleting}>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                       <MoreHorizontal className="w-4 h-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -373,9 +440,17 @@ export default function SectionComponent({
                       {section.collapsible ? "Disable" : "Enable"} Collapsible
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleDeleteSection} className="text-red-600" disabled={isDeleting}>
+                    <DropdownMenuItem onClick={() => addField("text")}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Text Field
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setShowDeleteDialog(true)}
+                      className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                    >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      {isDeleting ? "Deleting..." : "Delete Section"}
+                      Delete Section
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -395,35 +470,81 @@ export default function SectionComponent({
                       <FieldComponent
                         key={field.id}
                         field={field}
-                        onUpdateField={async (updates: Partial<FormField>) => {
+                        onUpdate={async (updates: Partial<FormField>) => {
                           await onUpdateField(field.id, updates)
                         }}
-                        onDeleteField={() => onDeleteField(field.id)}
-                        onDuplicate={() => duplicateField(field)}
+                        onDelete={() => onDeleteField(field.id)}
                       />
                     ))}
                 </div>
               </SortableContext>
             ) : (
               <div
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${isOver ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-gray-50"
-                  }`}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+                  isOver ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-gray-50"
+                }`}
               >
                 <Plus className="w-8 h-8 mx-auto mb-2 text-gray-400" />
                 <p className="text-sm text-gray-500 mb-4">No fields in this section yet</p>
                 <p className="text-xs text-gray-400">Drag fields from the palette or drop them here to get started</p>
+                <Button variant="outline" size="sm" onClick={() => addField("text")} className="mt-4">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Field
+                </Button>
               </div>
             )}
           </CardContent>
         )}
-
-        {/* Delete Indicator */}
-        {isDeleting && (
-          <div className="absolute inset-0 bg-red-100 border-2 border-red-400 rounded-lg flex items-center justify-center z-10">
-            <div className="text-red-700 font-medium">Deleting section...</div>
-          </div>
-        )}
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              Delete Section
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Are you sure you want to delete the section <strong>"{section.title}"</strong>?
+              </p>
+              {section.fields.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                  <p className="text-red-800 font-medium">This will permanently delete:</p>
+                  <ul className="mt-2 text-sm text-red-700 list-disc list-inside space-y-1">
+                    <li>The section and all its settings</li>
+                    <li>
+                      All {section.fields.length} field{section.fields.length !== 1 ? "s" : ""} in this section:
+                    </li>
+                    <div className="ml-4 mt-1 space-y-1">
+                      {section.fields.slice(0, 5).map((field) => (
+                        <li key={field.id} className="text-xs">
+                          - {field.label} ({field.type})
+                        </li>
+                      ))}
+                      {section.fields.length > 5 && (
+                        <li className="text-xs text-red-600">
+                          ... and {section.fields.length - 5} more field{section.fields.length - 5 !== 1 ? "s" : ""}
+                        </li>
+                      )}
+                    </div>
+                    <li>All form record data for these fields</li>
+                    <li>Any lookup relations involving these fields</li>
+                  </ul>
+                </div>
+              )}
+              <p className="text-sm font-medium text-red-800">This action cannot be undone.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSection} className="bg-red-600 hover:bg-red-700 focus:ring-red-600">
+              Delete Section
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Section Settings Dialog */}
       {showSettings && (

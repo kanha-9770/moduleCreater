@@ -1,84 +1,86 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { useDraggable } from "@dnd-kit/core";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Settings, Trash2, GripVertical, EyeOff, Lock, Star } from "lucide-react";
-import type { FormField } from "@/types/form-builder";
-import FieldSettings from "@/components/field-settings";
-import { LookupField } from "@/components/lookup-field";
+import { useState } from "react"
+import { useSortable } from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { Slider } from "@/components/ui/slider"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Settings, Trash2, GripVertical, EyeOff, Lock, Star, Copy } from "lucide-react"
+import type { FormField } from "@/types/form-builder"
+import { LookupField } from "@/components/lookup-field"
+import FieldSettings from "@/components/field-settings"
+import { v4 as uuidv4 } from 'uuid';
 
 interface FieldComponentProps {
-  field: FormField;
-  isOverlay?: boolean;
-  onUpdateField?: (field: Partial<FormField>) => void; // Updated to Partial<FormField>
-  onDeleteField?: (fieldId: string) => void;
+  field: FormField
+  isOverlay?: boolean
+  onUpdate?: (field: FormField) => void
+  onDelete?: (fieldId: string) => void
+  onCopy?: (field: FormField) => void
 }
 
-export default function FieldComponent({
-  field,
-  isOverlay = false,
-  onUpdateField,
-  onDeleteField,
-}: FieldComponentProps) {
-  const [showSettings, setShowSettings] = useState(false);
-  const [previewValue, setPreviewValue] = useState<any>(field.defaultValue || "");
+export default function FieldComponent({ field, isOverlay = false, onUpdate, onDelete, onCopy }: FieldComponentProps) {
+  const [showSettings, setShowSettings] = useState(false)
+  const [previewValue, setPreviewValue] = useState<any>(field.defaultValue || "")
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
     data: {
       type: "Field",
       field,
     },
     disabled: isOverlay,
-  });
+  })
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        opacity: isDragging ? 0.5 : 1,
-      }
-    : undefined;
-
-  const handleUpdateField = (updatedField: Partial<FormField>) => {
-    console.log("Updating field:", updatedField);
-    try {
-      onUpdateField?.({ ...field, ...updatedField });
-      setShowSettings(false);
-    } catch (error) {
-      console.error("Error in handleUpdateField:", error);
-    }
-  };
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 1,
+  }
 
   const handleDeleteField = () => {
     if (confirm("Are you sure you want to delete this field?")) {
-      onDeleteField?.(field.id);
+      onDelete?.(field.id)
     }
-  };
+  }
+
+  const handleCopyField = () => {
+    const newField = {
+      ...field,
+      id: uuidv4(), // Generate new unique ID
+      label: `${field.label} (Copy)`, // Append "(Copy)" to label
+      order: field.order + 1, // Place it after the current field
+    }
+    onCopy?.(newField)
+  }
+
+  const handleUpdateField = (updatedField: FormField) => {
+    onUpdate?.(updatedField)
+    setShowSettings(false)
+  }
 
   const renderFieldPreview = () => {
-    const options = Array.isArray(field.options) ? field.options : [];
+    const options = Array.isArray(field.options) ? field.options : []
 
     // Convert field to match LookupField interface
     const lookupFieldData = {
       id: field.id,
       label: field.label,
-      type: field.type, // Added type property
       placeholder: field.placeholder || undefined,
       description: field.description || undefined,
       validation: field.validation || { required: false },
       lookup: field.lookup || undefined,
-    };
+    }
 
     switch (field.type) {
       case "text":
@@ -94,7 +96,7 @@ export default function FieldComponent({
             onChange={(e) => setPreviewValue(e.target.value)}
             disabled
           />
-        );
+        )
 
       case "password":
         return (
@@ -105,7 +107,7 @@ export default function FieldComponent({
             onChange={(e) => setPreviewValue(e.target.value)}
             disabled
           />
-        );
+        )
 
       case "textarea":
         return (
@@ -116,10 +118,10 @@ export default function FieldComponent({
             rows={3}
             disabled
           />
-        );
+        )
 
       case "date":
-        return <Input type="date" value={previewValue} onChange={(e) => setPreviewValue(e.target.value)} disabled />;
+        return <Input type="date" value={previewValue} onChange={(e) => setPreviewValue(e.target.value)} disabled />
 
       case "datetime":
         return (
@@ -129,7 +131,7 @@ export default function FieldComponent({
             onChange={(e) => setPreviewValue(e.target.value)}
             disabled
           />
-        );
+        )
 
       case "checkbox":
         return (
@@ -137,7 +139,7 @@ export default function FieldComponent({
             <Checkbox checked={previewValue} onCheckedChange={setPreviewValue} disabled />
             <Label className="text-sm">{field.label}</Label>
           </div>
-        );
+        )
 
       case "switch":
         return (
@@ -145,7 +147,7 @@ export default function FieldComponent({
             <Switch checked={previewValue} onCheckedChange={setPreviewValue} disabled />
             <Label className="text-sm">{field.label}</Label>
           </div>
-        );
+        )
 
       case "radio":
         return (
@@ -157,7 +159,7 @@ export default function FieldComponent({
               </div>
             ))}
           </RadioGroup>
-        );
+        )
 
       case "select":
         return (
@@ -173,7 +175,7 @@ export default function FieldComponent({
               ))}
             </SelectContent>
           </Select>
-        );
+        )
 
       case "slider":
         return (
@@ -189,7 +191,7 @@ export default function FieldComponent({
             />
             <div className="text-center text-sm text-muted-foreground">Value: {previewValue || 0}</div>
           </div>
-        );
+        )
 
       case "rating":
         return (
@@ -206,13 +208,13 @@ export default function FieldComponent({
               {previewValue ? `${previewValue}/5` : "Not rated"}
             </span>
           </div>
-        );
+        )
 
       case "lookup":
-        return <LookupField field={lookupFieldData} value={previewValue} onChange={setPreviewValue} disabled={true} />;
+        return <LookupField field={lookupFieldData} value={previewValue} onChange={setPreviewValue} disabled={true} />
 
       case "file":
-        return <Input type="file" disabled multiple={field.properties?.multiple || false} />;
+        return <Input type="file" disabled multiple={field.properties?.multiple || false} />
 
       case "hidden":
         return (
@@ -223,7 +225,7 @@ export default function FieldComponent({
               {field.defaultValue || "No value"}
             </Badge>
           </div>
-        );
+        )
 
       default:
         return (
@@ -233,20 +235,20 @@ export default function FieldComponent({
             onChange={(e) => setPreviewValue(e.target.value)}
             disabled
           />
-        );
+        )
     }
-  };
+  }
 
   return (
     <>
       <Card
         ref={setNodeRef}
         style={style}
-        className={`group relative transition-all duration-200 ${
+        className={`group relative transition-all duration-200  ${
           isDragging ? "shadow-2xl scale-105 rotate-1 border-blue-400 bg-blue-50" : "hover:shadow-md"
         } ${!field.visible ? "opacity-50" : ""} ${field.readonly ? "bg-gray-50" : ""}`}
       >
-        <CardContent className="p-4">
+        <CardContent className="p-4 border rounded-lg">
           {/* Field Header */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2">
@@ -277,6 +279,9 @@ export default function FieldComponent({
 
             {/* Field Actions */}
             <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopyField}>
+                <Copy className="h-4 w-4" />
+              </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowSettings(true)}>
                 <Settings className="h-4 w-4" />
               </Button>
@@ -311,14 +316,9 @@ export default function FieldComponent({
       </Card>
 
       {/* Field Settings Dialog */}
-      {showSettings && (
-        <FieldSettings
-          field={field}
-          open={showSettings}
-          onOpenChange={setShowSettings}
-          onUpdate={handleUpdateField} // Changed to onUpdate
-        />
+      {showSettings && onUpdate && (
+        <FieldSettings field={field} open={showSettings} onOpenChange={setShowSettings} onUpdate={handleUpdateField} />
       )}
     </>
-  );
+  )
 }

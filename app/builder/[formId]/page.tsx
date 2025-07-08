@@ -19,7 +19,7 @@ import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import FormCanvas from "@/components/form-canvas"
-import FieldPalette from "@/components/field-palette"
+import FieldPalette, { PaletteItemDragOverlay, fieldTypes } from "@/components/field-palette"
 import PublishFormDialog from "@/components/publish-form-dialog"
 import LookupConfigurationDialog from "@/components/lookup-configuration-dialog"
 import type { Form, FormSection, FormField } from "@/types/form-builder"
@@ -42,11 +42,12 @@ export default function FormBuilderPage() {
   const [pendingLookupSectionId, setPendingLookupSectionId] = useState<string | null>(null)
 
   const [activeItem, setActiveItem] = useState<FormField | FormSection | null>(null)
+  const [activePaletteItem, setActivePaletteItem] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 10,
+        distance: 8,
       },
     }),
   )
@@ -83,13 +84,75 @@ export default function FormBuilderPage() {
     setForm(updatedForm)
   }
 
+  const handleUpdateField = async (field: FormField) => {
+    try {
+      console.log("FormBuilder updating field:", field)
+      const response = await fetch(`/api/fields/${field.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(field),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update field")
+      }
+
+      console.log("API response:", result)
+      await fetchForm()
+    } catch (error: any) {
+      console.error("FormBuilder update error:", error)
+      throw error
+    }
+  }
+
+  const handleDeleteField = async (fieldId: string) => {
+    try {
+      const response = await fetch(`/api/fields/${fieldId}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to delete field")
+      }
+
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || "Failed to delete field")
+      }
+
+      await fetchForm()
+      toast({
+        title: "Success",
+        description: "Field deleted successfully",
+      })
+    } catch (error: any) {
+      console.error("Error deleting field:", error)
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      })
+    }
+  }
+
   const onDragStart = (event: DragStartEvent) => {
-    if (event.active.data.current?.type === "Section") {
+    if (event.active.data.current?.isPaletteItem) {
+      setActivePaletteItem(String(event.active.id))
+      setActiveItem(null)
+    } else if (event.active.data.current?.type === "Section") {
       setActiveItem(event.active.data.current.section)
+      setActivePaletteItem(null)
     } else if (event.active.data.current?.type === "Field") {
       setActiveItem(event.active.data.current.field)
+      setActivePaletteItem(null)
     } else {
       setActiveItem(null)
+      setActivePaletteItem(null)
     }
   }
 
@@ -159,6 +222,7 @@ export default function FormBuilderPage() {
 
   const onDragEnd = async (event: DragEndEvent) => {
     setActiveItem(null)
+    setActivePaletteItem(null)
     const { active, over } = event
     if (!over) return
 
@@ -171,50 +235,133 @@ export default function FormBuilderPage() {
 
       const fieldType = String(active.id)
 
-      // Special handling for lookup fields - show configuration dialog
+      // Special handling for lookup fields
       if (fieldType === "lookup") {
         setPendingLookupSectionId(sectionId)
         setIsLookupDialogOpen(true)
         return
       }
 
-      // Handle other field types normally
+      // Handle other field types
       await createSingleField(fieldType, sectionId)
       return
     }
 
     if (active.id === over.id) return
 
+    // Handle section reordering
     const isSectionDrag = active.data.current?.type === "Section" && over.data.current?.type === "Section"
     if (isSectionDrag) {
       setForm((prevForm) => {
         if (!prevForm) return null
         const oldIndex = prevForm.sections.findIndex((s) => s.id === active.id)
         const newIndex = prevForm.sections.findIndex((s) => s.id === over.id)
+
+        if (oldIndex === newIndex) return prevForm
+
         const sortedSections = arrayMove(prevForm.sections, oldIndex, newIndex)
-        return { ...prevForm, sections: sortedSections }
+
+        // Update order values for all sections
+        const sectionsWithOrder = sortedSections.map((section, index) => ({
+          ...section,
+          order: index,
+        }))
+
+        return { ...prevForm, sections: sectionsWithOrder }
       })
+
+      // Persist section order changes to database
+      setTimeout(() => updateSectionOrders(), 100)
     }
 
+    // Handle field reordering within the same section
     const isFieldDrag = active.data.current?.type === "Field" && over.data.current?.type === "Field"
     if (isFieldDrag) {
-      setForm((prevForm) => {
-        if (!prevForm) return null
-        const activeSectionId = active.data.current?.field.sectionId
-        const overSectionId = over.data.current?.field.sectionId
-        const activeSection = prevForm.sections.find((s) => s.id === activeSectionId)!
-        const overSection = prevForm.sections.find((s) => s.id === overSectionId)!
+      const activeSectionId = active.data.current?.field.sectionId
+      const overSectionId = over.data.current?.field.sectionId
 
-        if (activeSectionId === overSectionId) {
-          const oldIndex = activeSection.fields.findIndex((f) => f.id === active.id)
-          const newIndex = overSection.fields.findIndex((f) => f.id === over.id)
-          const sortedFields = arrayMove(activeSection.fields, oldIndex, newIndex)
-          const newSections = prevForm.sections.map((s) =>
-            s.id === activeSectionId ? { ...s, fields: sortedFields } : s,
-          )
+      if (activeSectionId === overSectionId) {
+        setForm((prevForm) => {
+          if (!prevForm) return null
+
+          const sectionIndex = prevForm.sections.findIndex((s) => s.id === activeSectionId)
+          if (sectionIndex === -1) return prevForm
+
+          const section = prevForm.sections[sectionIndex]
+          const oldIndex = section.fields.findIndex((f) => f.id === active.id)
+          const newIndex = section.fields.findIndex((f) => f.id === over.id)
+
+          if (oldIndex === newIndex) return prevForm
+
+          const sortedFields = arrayMove(section.fields, oldIndex, newIndex)
+
+          // Update order values for all fields in the section
+          const fieldsWithOrder = sortedFields.map((field, index) => ({
+            ...field,
+            order: index,
+          }))
+
+          const newSections = [...prevForm.sections]
+          newSections[sectionIndex] = { ...section, fields: fieldsWithOrder }
+
           return { ...prevForm, sections: newSections }
-        }
-        return prevForm
+        })
+
+        // Persist field order changes to database
+        setTimeout(() => updateFieldOrders(activeSectionId), 100)
+      }
+    }
+  }
+
+  const updateSectionOrders = async () => {
+    if (!form) return
+
+    try {
+      // Update all section orders in parallel
+      const updatePromises = form.sections.map((section, index) =>
+        fetch(`/api/sections/${section.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: index }),
+        }),
+      )
+
+      await Promise.all(updatePromises)
+      console.log("Section orders updated successfully")
+    } catch (error) {
+      console.error("Error updating section orders:", error)
+      toast({
+        title: "Error",
+        description: "Failed to save section order",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const updateFieldOrders = async (sectionId: string) => {
+    if (!form) return
+
+    try {
+      const section = form.sections.find((s) => s.id === sectionId)
+      if (!section) return
+
+      // Update all field orders in the section in parallel
+      const updatePromises = section.fields.map((field, index) =>
+        fetch(`/api/fields/${field.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: index }),
+        }),
+      )
+
+      await Promise.all(updatePromises)
+      console.log("Field orders updated successfully for section:", sectionId)
+    } catch (error) {
+      console.error("Error updating field orders:", error)
+      toast({
+        title: "Error",
+        description: "Failed to save field order",
+        variant: "destructive",
       })
     }
   }
@@ -343,7 +490,6 @@ export default function FormBuilderPage() {
         }
       }
 
-      // Update form state with all created fields
       setForm((prevForm) => {
         if (!prevForm) return null
         const newSections = prevForm.sections.map((section) => {
@@ -504,6 +650,9 @@ export default function FormBuilderPage() {
     )
   }
 
+  // Get the active palette field type for drag overlay
+  const activePaletteFieldType = activePaletteItem ? fieldTypes.find((ft) => ft.id === activePaletteItem) : null
+
   return (
     <DndContext
       sensors={sensors}
@@ -552,21 +701,31 @@ export default function FormBuilderPage() {
         </div>
       </div>
 
+      {/* Enhanced Drag Overlay with proper z-index */}
       {typeof window !== "undefined" &&
         createPortal(
-          <DragOverlay>
+          <DragOverlay
+            style={{
+              zIndex: 10000,
+            }}
+          >
+            {activePaletteFieldType && <PaletteItemDragOverlay fieldType={activePaletteFieldType} />}
             {activeItem?.hasOwnProperty("fields") && (
-              <SectionComponent
-                section={activeItem as FormSection}
-                isOverlay
-                onUpdateSection={() => {}}
-                onDeleteSection={() => {}}
-                onUpdateField={() => {}}
-                onDeleteField={() => {}}
-              />
+              <div style={{ zIndex: 10000 }}>
+                <SectionComponent
+                  section={activeItem as FormSection}
+                  isOverlay
+                  onUpdateSection={() => {}}
+                  onDeleteSection={() => {}}
+                  onUpdateField={handleUpdateField}
+                  onDeleteField={handleDeleteField}
+                />
+              </div>
             )}
             {activeItem && !activeItem.hasOwnProperty("fields") && (
-              <FieldComponent field={activeItem as FormField} isOverlay />
+              <div style={{ zIndex: 10000 }}>
+                <FieldComponent field={activeItem as FormField} isOverlay onUpdate={() => {}} onDelete={() => {}} />
+              </div>
             )}
           </DragOverlay>,
           document.body,

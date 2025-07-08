@@ -7,16 +7,8 @@ export async function GET(request: NextRequest) {
     const sourceId = searchParams.get("sourceId")
 
     if (!sourceId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Source ID is required",
-        },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "sourceId is required" }, { status: 400 })
     }
-
-    console.log("Fetching fields for source:", sourceId)
 
     const lookupService = new LookupService()
     const fields = await lookupService.getFields(sourceId)

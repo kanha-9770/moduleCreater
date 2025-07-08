@@ -15,8 +15,8 @@ interface LookupFieldProps {
     id: string
     label: string
     type: string
-    placeholder?: string
-    description?: string | null
+    placeholder?: string | undefined
+    description?: string | null | undefined // Allow null to match database schema
     validation: {
       required?: boolean
       minLength?: number
@@ -29,7 +29,9 @@ interface LookupFieldProps {
       multiple?: boolean
       searchable?: boolean
       searchPlaceholder?: string
-      allowCustomValues?: boolean
+      allowCustomValues?: boolean // New property to enable custom values
+      useIdField?: boolean // New property for ID field support
+      idFieldName?: string // Name of the ID field
       fieldMapping?: {
         display: string
         value: string
@@ -52,7 +54,7 @@ interface LookupOption {
   description?: string | null
   data?: any
   type?: string
-  isCustom?: boolean
+  isCustom?: boolean // Flag to identify custom values
 }
 
 export function LookupField({ field, value, onChange, disabled = false, error }: LookupFieldProps) {
@@ -61,114 +63,182 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
   const [options, setOptions] = useState<LookupOption[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedOptions, setSelectedOptions] = useState<LookupOption[]>([])
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const searchTimeoutRef = useRef<NodeJS.Timeout>()
 
   const isMultiple = field.lookup?.multiple || false
   const isSearchable = field.lookup?.searchable !== false
-  const allowCustomValues = field.lookup?.allowCustomValues !== false
+  const allowCustomValues = field.lookup?.allowCustomValues !== false // Enable by default
+  const useIdField = field.lookup?.useIdField || false
+  const idFieldName = field.lookup?.idFieldName
   const sourceId = field.lookup?.sourceId
 
   useEffect(() => {
     if (value && (options.length > 0 || allowCustomValues)) {
-      const normalizeValue = (val: any): LookupOption => {
-        const existingOption = options.find((opt) => opt.storeValue === val)
-        if (existingOption) return existingOption
-        return {
-          id: `custom-${String(val)}`,
-          label: String(val ?? "Unknown"),
-          value: String(val ?? "unknown"),
-          storeValue: val,
-          isCustom: true,
-          type: "text",
+      if (isMultiple && Array.isArray(value)) {
+        const selected = value.map((val) => {
+          // First try to find existing option
+          const existingOption = options.find((opt) => opt.storeValue === val)
+          if (existingOption) {
+            return existingOption
+          }
+
+          // Create custom option for unknown values
+          return {
+            id: `custom-${String(val)}`,
+            label: String(val),
+            value: String(val),
+            storeValue: val,
+            isCustom: true,
+            type: "text",
+          }
+        })
+
+        setSelectedOptions(selected)
+      } else if (!isMultiple && value) {
+        const existingOption = options.find((opt) => opt.storeValue === value)
+        if (existingOption) {
+          setSelectedOptions([existingOption])
+        } else if (allowCustomValues) {
+          // Create custom option for unknown value
+          const customOption = {
+            id: `custom-${String(value)}`,
+            label: String(value),
+            value: String(value),
+            storeValue: value,
+            isCustom: true,
+            type: "text",
+          }
+          setSelectedOptions([customOption])
         }
       }
-
-      if (isMultiple && Array.isArray(value)) {
-        setSelectedOptions(value.map(normalizeValue))
-      } else if (!isMultiple && value) {
-        setSelectedOptions([normalizeValue(value)])
-      }
-    } else {
+    } else if (!value) {
       setSelectedOptions([])
     }
   }, [value, options, isMultiple, allowCustomValues])
 
   useEffect(() => {
-    if (sourceId) fetchOptions()
+    if (sourceId) {
+      fetchOptions()
+    }
   }, [sourceId])
 
   useEffect(() => {
-    if (!isSearchable || !sourceId) return
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    searchTimeoutRef.current = setTimeout(() => fetchOptions(searchTerm), 300)
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      if (sourceId && isSearchable) {
+        fetchOptions(searchTerm)
+      }
+    }, 300)
+
     return () => {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
     }
   }, [searchTerm, sourceId, isSearchable])
 
   const fetchOptions = async (search = "") => {
-    if (!sourceId) return
+    if (!sourceId) {
+      console.log("No sourceId provided for LookupField")
+      return
+    }
+
     setLoading(true)
     try {
-      const params = new URLSearchParams({ sourceId, search, limit: "50" })
-      const response = await fetch(`/api/lookup/data?${params}`)
-      if (!response.ok) throw new Error("Failed to fetch options")
-      const result = await response.json()
-      if (!result.success) throw new Error(result.error || "Failed to fetch options")
-
-      const transformedOptions: LookupOption[] = result.data.map((item: any) => {
-        const mapping = field.lookup?.fieldMapping || {
-          display: "New Text",
-          value: "record_id",
-          store: "New Text",
-          description: null,
-        }
-
-        const fieldData = item[mapping.display] ||
-          Object.values(item).find((val: any) => val?.field_label === mapping.display) ||
-          Object.values(item).find((val: any) => val?.field_id === mapping.display) ||
-          item["New Text"] || {}
-
-        const storeData = item[mapping.store] ||
-          Object.values(item).find((val: any) => val?.field_label === mapping.store) ||
-          Object.values(item).find((val: any) => val?.field_id === mapping.store) ||
-          fieldData
-
-        let fieldValue = fieldData.field_value ?? item[mapping.display] ?? "Unknown"
-        let storeValue = storeData.field_value ?? fieldValue
-
-        let displayLabel = String(fieldValue)
-        if (fieldData.field_type === "datetime" && fieldValue) {
-          try {
-            displayLabel = new Date(fieldValue).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-          } catch {
-            console.warn(`Invalid datetime format for field ${mapping.display}: ${fieldValue}`)
-          }
-        } else if (fieldData.field_type === "date" && fieldValue) {
-          try {
-            displayLabel = new Date(fieldValue).toLocaleDateString("en-US", { dateStyle: "medium" })
-          } catch {
-            console.warn(`Invalid date format for field ${mapping.display}: ${fieldValue}`)
-          }
-        } else if (fieldData.field_type === "number") {
-          displayLabel = Number(fieldValue).toString()
-        }
-
-        return {
-          id: item.record_id || `temp-${Math.random()}`,
-          label: displayLabel,
-          value: String(item[mapping.value] || item.record_id || Math.random()),
-          storeValue: storeValue,
-          description: mapping.description && item[mapping.description]?.field_value,
-          data: item,
-          type: fieldData.field_type || "text",
-          isCustom: false,
-        }
+      const params = new URLSearchParams({
+        sourceId,
+        search,
+        limit: "50",
       })
 
-      setOptions(transformedOptions)
+      const response = await fetch(`/api/lookup/data?${params}`)
+      const result = await response.json()
+
+      if (result.success) {
+        const transformedOptions: LookupOption[] = result.data.map((item: any) => {
+          const mapping = field.lookup?.fieldMapping || {
+            display: "New Text",
+            value: "record_id",
+            store: "New Text",
+            description: null,
+          }
+
+          // Try to match by field_label, then field_id, then fallback to default
+          const fieldData =
+            item[mapping.display] ||
+            Object.values(item).find((val: any) => val?.field_label === mapping.display) ||
+            Object.values(item).find((val: any) => val?.field_id === mapping.display) ||
+            item["New Text"] ||
+            {}
+
+          const storeData =
+            item[mapping.store] ||
+            Object.values(item).find((val: any) => val?.field_label === mapping.store) ||
+            Object.values(item).find((val: any) => val?.field_id === mapping.store) ||
+            fieldData
+
+          let fieldValue = fieldData.field_value ?? item[mapping.display] ?? "Unknown"
+          let storeValue = storeData.field_value ?? fieldValue
+
+          if (fieldValue === undefined) {
+            console.log(`Undefined field_value for display: ${mapping.display}`, { item, fieldData })
+            fieldValue = `Item ${item.record_id}`
+          }
+
+          if (storeValue === undefined) {
+            console.log(`Undefined storeValue for store: ${mapping.store}`, { item, storeData })
+            storeValue = fieldValue
+          }
+
+          // Format display label based on field type
+          let displayLabel = fieldValue
+          if (fieldData.field_type === "datetime" && fieldValue) {
+            try {
+              displayLabel = new Date(fieldValue).toLocaleString("en-US", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })
+            } catch {
+              console.log(`Invalid datetime format for field ${mapping.display}: ${fieldValue}`)
+            }
+          } else if (fieldData.field_type === "date" && fieldValue) {
+            try {
+              displayLabel = new Date(fieldValue).toLocaleDateString("en-US", { dateStyle: "medium" })
+            } catch {
+              console.log(`Invalid date format for field ${mapping.display}: ${fieldValue}`)
+            }
+          } else if (fieldData.field_type === "number") {
+            displayLabel = Number(fieldValue).toString()
+          }
+
+          return {
+            id: item.record_id || String(Math.random()),
+            label: displayLabel,
+            value: item[mapping.value] || item.record_id || String(Math.random()),
+            storeValue: storeValue,
+            description:
+              mapping.description && item[mapping.description]
+                ? item[mapping.description].field_value
+                : item.description,
+            data: item,
+            type: fieldData.field_type || "text",
+            isCustom: false,
+          }
+        })
+
+        setOptions(transformedOptions)
+        console.log(`Fetched ${transformedOptions.length} options for source ${sourceId}`, {
+          options: transformedOptions,
+        })
+      } else {
+        console.log("Failed to fetch lookup options:", result.error)
+        setOptions([])
+      }
     } catch (error) {
-      console.error("Error fetching lookup options:", error)
+      console.log("Error fetching lookup options:", error)
       setOptions([])
     } finally {
       setLoading(false)
@@ -176,21 +246,28 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
   }
 
   const handleSelect = (option: LookupOption) => {
-    let newSelected: LookupOption[]
     if (isMultiple) {
-      newSelected = selectedOptions.some((selected) => selected.value === option.value)
-        ? selectedOptions.filter((selected) => selected.value !== option.value)
-        : [...selectedOptions, option]
+      const isSelected = selectedOptions.some((selected) => selected.value === option.value)
+      let newSelected: LookupOption[]
+
+      if (isSelected) {
+        newSelected = selectedOptions.filter((selected) => selected.value !== option.value)
+      } else {
+        newSelected = [...selectedOptions, option]
+      }
+
+      setSelectedOptions(newSelected)
+      onChange?.(newSelected.map((opt) => opt.storeValue))
     } else {
-      newSelected = [option]
+      setSelectedOptions([option])
+      onChange?.(option.storeValue)
       setOpen(false)
     }
-    setSelectedOptions(newSelected)
-    onChange?.(isMultiple ? newSelected.map((opt) => opt.storeValue) : newSelected[0].storeValue)
   }
 
   const handleCreateCustom = () => {
     if (!searchTerm.trim() || !allowCustomValues) return
+
     const customOption: LookupOption = {
       id: `custom-${Date.now()}`,
       label: searchTerm.trim(),
@@ -200,36 +277,55 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
       type: "text",
     }
 
-    if (selectedOptions.some((opt) => opt.storeValue === customOption.storeValue)) return
+    // Check if custom value already exists
+    const existsInSelected = selectedOptions.some((opt) => opt.storeValue === customOption.storeValue)
+    if (existsInSelected) return
 
-    const newSelected = isMultiple ? [...selectedOptions, customOption] : [customOption]
-    setSelectedOptions(newSelected)
-    onChange?.(isMultiple ? newSelected.map((opt) => opt.storeValue) : newSelected[0].storeValue)
-    if (!isMultiple) setOpen(false)
-    setSearchTerm("")
+    if (isMultiple) {
+      const newSelected = [...selectedOptions, customOption]
+      setSelectedOptions(newSelected)
+      onChange?.(newSelected.map((opt) => opt.storeValue))
+    } else {
+      setSelectedOptions([customOption])
+      onChange?.(customOption.storeValue)
+      setOpen(false)
+    }
+
+    setSearchTerm("") // Clear search after creating
   }
 
   const handleRemove = (optionToRemove: LookupOption) => {
-    const newSelected = isMultiple
-      ? selectedOptions.filter((selected) => selected.value !== optionToRemove.value)
-      : []
-    setSelectedOptions(newSelected)
-    onChange?.(isMultiple ? newSelected.map((opt) => opt.storeValue) : null)
+    if (isMultiple) {
+      const newSelected = selectedOptions.filter((selected) => selected.value !== optionToRemove.value)
+      setSelectedOptions(newSelected)
+      onChange?.(newSelected.map((opt) => opt.storeValue))
+    } else {
+      setSelectedOptions([])
+      onChange?.(null)
+    }
   }
 
   const displayValue = () => {
-    if (selectedOptions.length === 0) return field.placeholder || "Select..."
-    return isMultiple ? `${selectedOptions.length} selected` : selectedOptions[0].label
+    if (selectedOptions.length === 0) {
+      return field.placeholder || "Select..."
+    }
+
+    if (isMultiple) {
+      return `${selectedOptions.length} selected`
+    }
+
+    return selectedOptions[0].label
   }
 
-  const searchMatchesExisting = options.some((option) =>
-    (typeof option.label === "string" ? option.label.toLowerCase().includes(searchTerm.toLowerCase()) : false) ||
-    (typeof option.storeValue === "string" ? option.storeValue.toLowerCase().includes(searchTerm.toLowerCase()) : false)
+  // Check if search term matches any existing options
+  const searchMatchesExisting = options.some(
+    (option) =>
+      option.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(option.storeValue).toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const searchExistsInSelected = selectedOptions.some((opt) =>
-    String(opt.storeValue || "").toLowerCase() === searchTerm.trim().toLowerCase()
-  )
+  // Check if search term already exists in selected options
+  const searchExistsInSelected = selectedOptions.some((opt) => opt.storeValue === searchTerm.trim())
 
   const showCreateOption = allowCustomValues && searchTerm.trim() && !searchMatchesExisting && !searchExistsInSelected
 
@@ -244,7 +340,7 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
             className={cn(
               "w-full justify-between",
               !selectedOptions.length && "text-muted-foreground",
-              error && "border-red-500"
+              error && "border-red-500",
             )}
             disabled={disabled}
           >
@@ -271,6 +367,7 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
                 />
               </div>
             )}
+
             <CommandList>
               {loading ? (
                 <div className="flex items-center justify-center p-4">
@@ -280,6 +377,7 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
               ) : (
                 <CommandGroup>
                   <ScrollArea className="h-[200px]">
+                    {/* Show create option first if applicable */}
                     {showCreateOption && (
                       <CommandItem
                         onSelect={handleCreateCustom}
@@ -288,10 +386,16 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
                         <Plus className="mr-2 h-4 w-4 text-green-600" />
                         <div>
                           <div className="font-medium text-green-600">Create "{searchTerm.trim()}"</div>
-                          <div className="text-xs text-muted-foreground">Add as new custom value</div>
+                          <div className="text-xs text-muted-foreground">
+                            {useIdField
+                              ? `Add as new value (will ${idFieldName ? `update if ${idFieldName} matches` : "create new record"})`
+                              : "Add as new custom value"}
+                          </div>
                         </div>
                       </CommandItem>
                     )}
+
+                    {/* Show existing options */}
                     {options.length === 0 && !showCreateOption ? (
                       <div className="p-4 text-center text-sm text-muted-foreground">
                         {allowCustomValues ? "No options found. Type to create a custom value." : "No options found."}
@@ -347,7 +451,13 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
         </div>
       )}
 
-      {allowCustomValues && (
+      {useIdField && idFieldName && (
+        <p className="text-xs text-blue-600">
+          💡 Records will be updated if {idFieldName} field matches, otherwise new records will be created
+        </p>
+      )}
+
+      {allowCustomValues && !useIdField && (
         <p className="text-xs text-muted-foreground">Type to search existing values or create new ones</p>
       )}
 
@@ -355,3 +465,5 @@ export function LookupField({ field, value, onChange, disabled = false, error }:
     </div>
   )
 }
+
+export default LookupField

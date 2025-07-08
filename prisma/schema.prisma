@@ -1,3 +1,6 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,155 +17,192 @@ model FormModule {
   icon        String?
   color       String?
   settings    Json     @default("{}")
+  
+  // Hierarchical fields
+  parentId    String?  @map("parent_id")
+  parent      FormModule? @relation("ModuleHierarchy", fields: [parentId], references: [id])
+  children    FormModule[] @relation("ModuleHierarchy")
+  moduleType  String   @default("standard") @map("module_type") // "master", "child", "standard"
+  level       Int      @default(0)
+  path        String?
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  
   forms       Form[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  lookupSources LookupSource[] @relation("ModuleLookupSource")
-  lookupFieldRelations LookupFieldRelation[] @relation("ModuleFieldRelation")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Lookup relations
+  lookupSources LookupSource[]
 
   @@map("form_modules")
+  @@index([parentId])
+  @@index([level])
+  @@index([sortOrder])
+  @@index([moduleType])
 }
 
 model Form {
-  id                String        @id @default(cuid())
-  moduleId          String
-  module            FormModule    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  moduleId          String   @map("module_id")
+  module            FormModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   name              String
   description       String?
-  settings          Json          @default("{}")
+  settings          Json     @default("{}")
   sections          FormSection[]
   records           FormRecord[]
   events            FormEvent[]
-  isPublished       Boolean       @default(false)
-  publishedAt       DateTime?
-  formUrl           String?
-  allowAnonymous    Boolean       @default(true)
-  requireLogin      Boolean       @default(false)
-  maxSubmissions    Int?
-  submissionMessage String?
+  isPublished       Boolean  @default(false) @map("is_published")
+  publishedAt       DateTime? @map("published_at")
+  formUrl           String?  @map("form_url")
+  allowAnonymous    Boolean  @default(true) @map("allow_anonymous")
+  requireLogin      Boolean  @default(false) @map("require_login")
+  maxSubmissions    Int?     @map("max_submissions")
+  submissionMessage String?  @map("submission_message")
   conditional       Json?
   styling           Json?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  lookupSources     LookupSource[] @relation("FormLookupSource")
-  lookupFieldRelations LookupFieldRelation[] @relation("FormFieldRelation")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Lookup relations
+  lookupSources     LookupSource[]
 
   @@map("forms")
+  @@index([moduleId])
+  @@index([isPublished])
 }
 
 model FormSection {
-  id          String     @id @default(cuid())
-  formId      String
-  form        Form       @relation(fields: [formId], references: [id], onDelete: Cascade)
+  id          String      @id @default(cuid())
+  formId      String      @map("form_id")
+  form        Form        @relation(fields: [formId], references: [id], onDelete: Cascade)
   title       String
   description String?
-  order       Int        @default(0)
-  columns     Int        @default(1)
-  visible     Boolean    @default(true)
-  collapsible Boolean    @default(false)
-  collapsed   Boolean    @default(false)
+  order       Int         @default(0)
+  columns     Int         @default(1)
+  visible     Boolean     @default(true)
+  collapsible Boolean     @default(false)
+  collapsed   Boolean     @default(false)
   conditional Json?
   styling     Json?
   fields      FormField[]
   subforms    Subform[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
 
   @@map("form_sections")
+  @@index([formId])
+  @@index([order])
 }
 
 model FormField {
-  id            String       @id @default(cuid())
-  sectionId     String?
-  section       FormSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subformId     String?
-  subform       Subform?     @relation(fields: [subformId], references: [id], onDelete: Cascade)
-  type          String
-  label         String
-  placeholder   String?
-  description   String?
-  defaultValue  String?
-  options       Json         @default("[]")
-  validation    Json         @default("{}")
-  visible       Boolean      @default(true)
-  readonly      Boolean      @default(false)
-  width         String       @default("full")
-  order         Int          @default(0)
-  conditional   Json?
-  styling       Json?
-  properties    Json?
-  formula       String?
-  rollup        Json?
-  lookup        Json?
-  sourceModule  String?
-  sourceForm    String?
-  displayField  String?
-  valueField    String?
-  multiple      Boolean?
-  searchable    Boolean?
-  filters       Json?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  lookupRelations LookupFieldRelation[] @relation("FieldLookupRelation")
+  id           String       @id @default(cuid())
+  sectionId    String?      @map("section_id")
+  section      FormSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subformId    String?      @map("subform_id")
+  subform      Subform?     @relation(fields: [subformId], references: [id], onDelete: Cascade)
+  type         String
+  label        String
+  placeholder  String?
+  description  String?
+  defaultValue String?      @map("default_value")
+  options      Json         @default("[]")
+  validation   Json         @default("{}")
+  visible      Boolean      @default(true)
+  readonly     Boolean      @default(false)
+  width        String       @default("full")
+  order        Int          @default(0)
+  conditional  Json?
+  styling      Json?
+  properties   Json?
+  formula      String?
+  rollup       Json?
+  lookup       Json?
+  
+  // Legacy lookup fields for backward compatibility
+  sourceModule String?      @map("source_module")
+  sourceForm   String?      @map("source_form")
+  displayField String?      @map("display_field")
+  valueField   String?      @map("value_field")
+  multiple     Boolean?
+  searchable   Boolean?
+  filters      Json?
+  
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  // Lookup relations
+  lookupRelations LookupFieldRelation[]
 
   @@map("form_fields")
+  @@index([sectionId])
+  @@index([subformId])
+  @@index([type])
+  @@index([order])
 }
 
 model Subform {
   id        String      @id @default(cuid())
-  sectionId String
+  sectionId String      @map("section_id")
   section   FormSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   name      String
-  title     String
   order     Int         @default(0)
   fields    FormField[]
   records   SubformRecord[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
 
   @@map("subforms")
+  @@index([sectionId])
+  @@index([order])
 }
 
 model SubformRecord {
   id        String   @id @default(cuid())
-  subformId String
+  subformId String   @map("subform_id")
   subform   Subform  @relation(fields: [subformId], references: [id], onDelete: Cascade)
   data      Json     @default("{}")
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("subform_records")
+  @@index([subformId])
 }
 
 model FormRecord {
   id           String   @id @default(cuid())
-  formId       String
+  formId       String   @map("form_id")
   form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  recordData   Json     @default("{}") @db.JsonB
+  recordData   Json     @default("{}") @map("record_data")
+  submittedBy  String?  @map("submitted_by")
+  submittedAt  DateTime @default(now()) @map("submitted_at")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
   status       String   @default("submitted")
-  submittedBy  String?
-  submittedAt  DateTime @default(now())
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("form_records")
+  @@index([formId])
+  @@index([submittedAt])
+  @@index([status])
 }
 
 model FormEvent {
   id        String   @id @default(cuid())
-  formId    String
+  formId    String   @map("form_id")
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  eventType String
+  eventType String   @map("event_type")
   payload   Json     @default("{}")
-  sessionId String?
-  userAgent String?
-  ipAddress String?
-  createdAt DateTime @default(now())
+  sessionId String?  @map("session_id")
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("form_events")
+  @@index([formId])
+  @@index([eventType])
+  @@index([createdAt])
 }
 
 model FieldType {
@@ -171,57 +211,62 @@ model FieldType {
   label        String
   category     String
   icon         String
-  description  String?
-  defaultProps Json     @default("{}")
+  description  String
+  defaultProps Json     @default("{}") @map("default_props")
   active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("field_types")
+  @@index([category])
+  @@index([active])
 }
 
+// Lookup system models
 model LookupSource {
   id              String   @id @default(cuid())
   name            String
-  type            String   // 'static', 'module', 'form'
-  staticSourceName String?  // For static sources like 'countries', 'currencies'
-  sourceModuleId  String?  // For module sources
-  sourceFormId    String?  // For form sources
-  sourceModule    FormModule? @relation("ModuleLookupSource", fields: [sourceModuleId], references: [id], onDelete: Cascade)
-  sourceForm      Form?    @relation("FormLookupSource", fields: [sourceFormId], references: [id], onDelete: Cascade)
-  data            Json     @default("[]")
+  type            String   // "static", "module", "form", "api"
   description     String?
+  sourceModuleId  String?  @map("source_module_id")
+  sourceModule    FormModule? @relation(fields: [sourceModuleId], references: [id], onDelete: Cascade)
+  sourceFormId    String?  @map("source_form_id")
+  sourceForm      Form?    @relation(fields: [sourceFormId], references: [id], onDelete: Cascade)
+  apiEndpoint     String?  @map("api_endpoint")
+  staticData      Json?    @map("static_data")
   active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  lookupFieldRelations LookupFieldRelation[] @relation("SourceLookupRelation")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
+  // Relations
+  fieldRelations  LookupFieldRelation[]
+
+  @@map("lookup_sources")
+  @@index([type])
+  @@index([active])
   @@index([sourceModuleId])
   @@index([sourceFormId])
-  @@map("lookup_sources")
 }
 
 model LookupFieldRelation {
   id              String      @id @default(cuid())
-  lookupSourceId  String
-  formFieldId     String
-  formId          String?
-  moduleId        String?
-  displayField    String?
-  valueField      String?
-  multiple        Boolean?    @default(false)
-  searchable      Boolean?    @default(false)
-  filters         Json?       @default("{}")
-  lookupSource    LookupSource @relation("SourceLookupRelation", fields: [lookupSourceId], references: [id], onDelete: Cascade)
-  formField       FormField   @relation("FieldLookupRelation", fields: [formFieldId], references: [id], onDelete: Cascade)
-  form            Form?       @relation("FormFieldRelation", fields: [formId], references: [id], onDelete: Cascade)
-  module          FormModule? @relation("ModuleFieldRelation", fields: [moduleId], references: [id], onDelete: Cascade)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  lookupSourceId  String      @map("lookup_source_id")
+  lookupSource    LookupSource @relation(fields: [lookupSourceId], references: [id], onDelete: Cascade)
+  formFieldId     String      @map("form_field_id")
+  formField       FormField   @relation(fields: [formFieldId], references: [id], onDelete: Cascade)
+  formId          String      @map("form_id")
+  moduleId        String      @map("module_id")
+  displayField    String?     @map("display_field")
+  valueField      String?     @map("value_field")
+  multiple        Boolean?
+  searchable      Boolean?
+  filters         Json        @default("{}")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
+  @@map("lookup_field_relations")
   @@index([lookupSourceId])
   @@index([formFieldId])
   @@index([formId])
   @@index([moduleId])
-  @@map("lookup_field_relations")
 }

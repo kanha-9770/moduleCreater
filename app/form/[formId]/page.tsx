@@ -1,4 +1,3 @@
-
 "use client"
 
 import type React from "react"
@@ -70,7 +69,8 @@ export default function PublicFormPage() {
       result.data.sections.forEach((section: any) => {
         section.fields.forEach((field: FormField) => {
           if (field.defaultValue) {
-            initialData[field.id] = field.defaultValue
+            // Convert default values to strings for consistent handling
+            initialData[field.id] = String(field.defaultValue)
           }
         })
       })
@@ -135,6 +135,7 @@ export default function PublicFormPage() {
     if (field.type === "lookup" && value) {
       // Validate length for single or multiple values
       const values = Array.isArray(value) ? value : [value]
+
       if (validation.minLength) {
         for (const val of values) {
           if (val && val.length < validation.minLength) {
@@ -142,6 +143,7 @@ export default function PublicFormPage() {
           }
         }
       }
+
       if (validation.maxLength) {
         for (const val of values) {
           if (val && val.length > validation.maxLength) {
@@ -149,6 +151,7 @@ export default function PublicFormPage() {
           }
         }
       }
+
       // Pattern validation
       if (validation.pattern) {
         const regex = new RegExp(validation.pattern)
@@ -174,11 +177,9 @@ export default function PublicFormPage() {
       if (isNaN(num)) {
         return "Please enter a valid number"
       }
-
       if (validation.min !== undefined && num < validation.min) {
         return `Value must be at least ${validation.min}`
       }
-
       if (validation.max !== undefined && num > validation.max) {
         return `Value must be at most ${validation.max}`
       }
@@ -189,7 +190,6 @@ export default function PublicFormPage() {
       if (validation.minLength && value.length < validation.minLength) {
         return `Must be at least ${validation.minLength} characters`
       }
-
       if (validation.maxLength && value.length > validation.maxLength) {
         return `Must be at most ${validation.maxLength} characters`
       }
@@ -211,9 +211,8 @@ export default function PublicFormPage() {
 
     // For lookup fields, handle both predefined and custom values
     let storeValue = value
-    const field = form?.sections
-      .flatMap((section) => section.fields)
-      .find((f) => f.id === fieldId)
+
+    const field = form?.sections.flatMap((section) => section.fields).find((f) => f.id === fieldId)
 
     if (field?.type === "lookup" && value) {
       if (Array.isArray(value)) {
@@ -229,8 +228,7 @@ export default function PublicFormPage() {
         })
       } else if (typeof value === "object") {
         // Single selection - use store value
-        storeValue = value.storeValue !== undefined ? value.storeValue : (value.label || value.value || value)
-
+        storeValue = value.storeValue !== undefined ? value.storeValue : value.label || value.value || value
       } else {
         // Custom value (string) from LookupField
         console.log(`Processing lookup custom value:`, value)
@@ -276,7 +274,6 @@ export default function PublicFormPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     console.log("Form submission started")
     console.log("Current form data:", formData)
 
@@ -363,6 +360,41 @@ export default function PublicFormPage() {
     // Ensure options is an array for select and radio fields
     const options = Array.isArray(field.options) ? field.options : []
 
+    // Helper function to get a valid option value
+    const getOptionValue = (option: any, index: number): string => {
+      if (option.value && String(option.value).trim() !== "") {
+        return String(option.value).trim()
+      }
+      if (option.id && String(option.id).trim() !== "") {
+        return String(option.id).trim()
+      }
+      if (option.label && String(option.label).trim() !== "") {
+        return String(option.label).trim()
+      }
+      // Fallback to index-based value if all else fails
+      return `option-${index}`
+    }
+
+    // Helper function to get option label
+    const getOptionLabel = (option: any): string => {
+      if (option.label && String(option.label).trim() !== "") {
+        return String(option.label).trim()
+      }
+      if (option.value && String(option.value).trim() !== "") {
+        return String(option.value).trim()
+      }
+      if (option.id && String(option.id).trim() !== "") {
+        return String(option.id).trim()
+      }
+      return "Untitled Option"
+    }
+
+    console.log(`Rendering field ${field.id} (${field.type}):`, {
+      value,
+      options,
+      fieldOptions: field.options,
+    })
+
     switch (field.type) {
       case "text":
       case "email":
@@ -427,39 +459,62 @@ export default function PublicFormPage() {
         )
 
       case "radio":
+        console.log(`Radio field ${field.id} - Current value: "${value}", Options:`, options)
         return (
           <RadioGroup
-            value={value || ""}
-            onValueChange={(val) => handleFieldChange(field.id, val)}
+            value={String(value || "")}
+            onValueChange={(val) => {
+              console.log(`Radio field ${field.id} changed to: "${val}"`)
+              handleFieldChange(field.id, val)
+            }}
             disabled={submitting || submitted}
           >
-            {options.map((option: any) => (
-              <div key={option.value} className="flex items-center space-x-2">
-                <RadioGroupItem value={option.value} id={`${field.id}-${option.value}`} />
-                <Label htmlFor={`${field.id}-${option.value}`} className="text-sm">
-                  {option.label}
-                </Label>
-              </div>
-            ))}
+            {options.map((option: any, index: number) => {
+              const optionValue = getOptionValue(option, index)
+              const optionLabel = getOptionLabel(option)
+              const isChecked = String(value || "") === optionValue
+
+              console.log(`Radio option: value="${optionValue}", label="${optionLabel}", checked=${isChecked}`)
+
+              return (
+                <div key={optionValue} className="flex items-center space-x-2">
+                  <RadioGroupItem value={optionValue} id={`${field.id}-${optionValue}`} checked={isChecked} />
+                  <Label htmlFor={`${field.id}-${optionValue}`} className="text-sm cursor-pointer">
+                    {optionLabel}
+                  </Label>
+                </div>
+              )
+            })}
           </RadioGroup>
         )
 
       case "select":
+        console.log(`Select field ${field.id} - Current value: "${value}", Options:`, options)
         return (
           <Select
-            value={value || ""}
-            onValueChange={(val) => handleFieldChange(field.id, val)}
+            value={String(value || "")}
+            onValueChange={(val) => {
+              console.log(`Select field ${field.id} changed to: "${val}"`)
+              handleFieldChange(field.id, val)
+            }}
             disabled={submitting || submitted}
           >
             <SelectTrigger className={error ? "border-red-500" : ""}>
               <SelectValue placeholder={field.placeholder || "Select an option"} />
             </SelectTrigger>
             <SelectContent>
-              {options.map((option: any) => (
-                <SelectItem key={option.value || option.id} value={option.value || option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              {options.map((option: any, index: number) => {
+                const optionValue = getOptionValue(option, index)
+                const optionLabel = getOptionLabel(option)
+
+                console.log(`Select option: value="${optionValue}", label="${optionLabel}"`)
+
+                return (
+                  <SelectItem key={`${field.id}-${optionValue}`} value={optionValue}>
+                    {optionLabel}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         )
@@ -659,7 +714,7 @@ export default function PublicFormPage() {
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="text-sm">Debug: Form Data</CardTitle>
-            </CardHeader>
+            </CardHeader>1
             <CardContent>
               <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">{JSON.stringify(formData, null, 2)}</pre>
             </CardContent>

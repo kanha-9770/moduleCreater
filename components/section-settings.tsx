@@ -99,7 +99,6 @@ export default function SectionSettings({ section, open, onOpenChange, onUpdate 
                     placeholder="Enter section title"
                   />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea
@@ -128,9 +127,7 @@ export default function SectionSettings({ section, open, onOpenChange, onUpdate 
                     onCheckedChange={(checked) => setFormData({ ...formData, visible: checked })}
                   />
                 </div>
-
                 <Separator />
-
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Collapsible</Label>
@@ -141,7 +138,6 @@ export default function SectionSettings({ section, open, onOpenChange, onUpdate 
                     onCheckedChange={(checked) => setFormData({ ...formData, collapsible: checked })}
                   />
                 </div>
-
                 {formData.collapsible && (
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
@@ -189,15 +185,14 @@ export default function SectionSettings({ section, open, onOpenChange, onUpdate 
                 <div className="p-4 bg-gray-50 rounded-lg">
                   <h4 className="text-sm font-medium mb-2">Preview</h4>
                   <div
-                    className={`grid gap-2 ${
-                      formData.columns === 1
+                    className={`grid gap-2 ${formData.columns === 1
                         ? "grid-cols-1"
                         : formData.columns === 2
                           ? "grid-cols-2"
                           : formData.columns === 3
                             ? "grid-cols-3"
                             : "grid-cols-4"
-                    }`}
+                      }`}
                   >
                     {Array.from({ length: formData.columns }, (_, i) => (
                       <div
@@ -234,7 +229,6 @@ export default function SectionSettings({ section, open, onOpenChange, onUpdate 
                       }
                     />
                   </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="borderColor">Border Color</Label>
                     <Input

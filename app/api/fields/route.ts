@@ -1,26 +1,32 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database-service"
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const data = await request.json()
+    console.log("[API] Creating field with data:", data)
 
-    const field = await DatabaseService.createField({
-      sectionId: body.sectionId,
-      subformId: body.subformId,
-      type: body.type,
-      label: body.label,
-      placeholder: body.placeholder,
-      description: body.description,
-      defaultValue: body.defaultValue,
-      options: body.options,
-      validation: body.validation,
-      visible: body.visible,
-      readonly: body.readonly,
-      width: body.width,
-      order: body.order,
-    })
+    // Enhanced validation for lookup fields
+    if (data.type === "lookup") {
+      if (!data.lookup?.sourceId) {
+        return NextResponse.json(
+          { success: false, error: "Lookup source is required for lookup fields" },
+          { status: 400 },
+        )
+      }
 
+      // Validate field mapping
+      if (!data.lookup.fieldMapping?.display || !data.lookup.fieldMapping?.value) {
+        return NextResponse.json(
+          { success: false, error: "Display and value field mappings are required" },
+          { status: 400 },
+        )
+      }
+    }
+
+    const field = await DatabaseService.createField(data)
+
+    console.log("[API] Field created successfully:", field.id)
     return NextResponse.json({ success: true, data: field })
   } catch (error: any) {
     console.error("Error creating field:", error)
@@ -28,10 +34,17 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // This could be used to get all fields if needed
-    return NextResponse.json({ success: true, data: [] })
+    const { searchParams } = new URL(request.url)
+    const sectionId = searchParams.get("sectionId")
+
+    if (!sectionId) {
+      return NextResponse.json({ success: false, error: "Section ID is required" }, { status: 400 })
+    }
+
+    const fields = await DatabaseService.getFields(sectionId)
+    return NextResponse.json({ success: true, data: fields })
   } catch (error: any) {
     console.error("Error fetching fields:", error)
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })

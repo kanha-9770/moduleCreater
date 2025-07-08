@@ -1,8 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/database-service"
+import { DatabaseService } from "@/lib/database-service"
 
 export async function GET(request: NextRequest, { params }: { params: { formId: string } }) {
   try {
+    console.log("API: Fetching records for form:", params.formId)
+
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
     const limit = Number.parseInt(searchParams.get("limit") || "50")
@@ -11,7 +13,9 @@ export async function GET(request: NextRequest, { params }: { params: { formId: 
     const sortBy = searchParams.get("sortBy") || "submittedAt"
     const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc"
 
-    const records = await db.getFormRecords(params.formId, {
+    console.log("API: Query params:", { page, limit, status, search, sortBy, sortOrder })
+
+    const records = await DatabaseService.getFormRecords(params.formId, {
       page,
       limit,
       status,
@@ -20,9 +24,12 @@ export async function GET(request: NextRequest, { params }: { params: { formId: 
       sortOrder,
     })
 
-    const total = await db.getFormSubmissionCount(params.formId)
+    const total = await DatabaseService.getFormSubmissionCount(params.formId)
+
+    console.log("API: Records fetched:", records.length, "Total:", total)
 
     return NextResponse.json({
+      success: true,
       records,
       total,
       page,
@@ -30,25 +37,22 @@ export async function GET(request: NextRequest, { params }: { params: { formId: 
       totalPages: Math.ceil(total / limit),
     })
   } catch (error: any) {
-    console.error("Error fetching form records:", error)
-    return NextResponse.json({ error: "Failed to fetch form records", details: error.message }, { status: 500 })
+    console.error("API: Error fetching form records:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch form records", details: error.message },
+      { status: 500 },
+    )
   }
 }
 
 export async function POST(request: NextRequest, { params }: { params: { formId: string } }) {
   try {
     const body = await request.json()
-    const { recordData, submittedBy } = body
+    const record = await DatabaseService.createFormRecord(params.formId, body.recordData, body.submittedBy)
 
-    if (!recordData || typeof recordData !== "object") {
-      return NextResponse.json({ error: "Invalid record data" }, { status: 400 })
-    }
-
-    const record = await db.createFormRecord(params.formId, recordData, submittedBy)
-
-    return NextResponse.json(record, { status: 201 })
+    return NextResponse.json({ success: true, data: record })
   } catch (error: any) {
-    console.error("Error creating form record:", error)
-    return NextResponse.json({ error: "Failed to create form record", details: error.message }, { status: 500 })
+    console.error("API: Error creating form record:", error)
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }

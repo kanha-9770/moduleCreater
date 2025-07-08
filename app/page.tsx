@@ -43,9 +43,12 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  TreePine,
+  FolderPlus
 } from "lucide-react"
 import Link from "next/link"
 import type { FormModule, Form } from "@/types/form-builder"
+import { EnhancedModuleTree } from "@/components/enhanced-module-tree"
 
 interface FormRecord {
   id: string
@@ -53,6 +56,13 @@ interface FormRecord {
   data: Record<string, any>
   submittedAt: Date
   status: "pending" | "approved" | "rejected"
+}
+
+interface ParentModuleOption {
+  id: string
+  name: string
+  level: number
+  path: string
 }
 
 export default function HomePage() {
@@ -66,10 +76,17 @@ export default function HomePage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingModule, setEditingModule] = useState<FormModule | null>(null)
-  const [moduleData, setModuleData] = useState({ name: "", description: "" })
+  const [moduleData, setModuleData] = useState({
+    name: "",
+    description: "",
+    parentId: "",
+    icon: "",
+    color: ""
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [viewMode, setViewMode] = useState<"grid" | "list" | "sidebar">("sidebar")
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "sidebar" | "tree">("tree")
   const [rightPanelTab, setRightPanelTab] = useState<"publish" | "records">("publish")
+  const [availableParents, setAvailableParents] = useState<ParentModuleOption[]>([])
 
   useEffect(() => {
     fetchModules()
@@ -89,6 +106,8 @@ export default function HomePage() {
 
       if (data.success) {
         setModules(data.data)
+        // Build parent options from flat module list
+        buildParentOptions(data.data)
         // Auto-select first module if available
         if (data.data.length > 0) {
           setSelectedModule(data.data[0])
@@ -106,6 +125,30 @@ export default function HomePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const buildParentOptions = (moduleList: FormModule[]) => {
+    const flattenModules = (modules: FormModule[], level = 0): ParentModuleOption[] => {
+      const options: ParentModuleOption[] = []
+
+      modules.forEach(module => {
+        options.push({
+          id: module.id,
+          name: module.name,
+          level,
+          path: module.path || module.name.toLowerCase().replace(/\s+/g, '-')
+        })
+
+        if (module.children && module.children.length > 0) {
+          options.push(...flattenModules(module.children, level + 1))
+        }
+      })
+
+      return options
+    }
+
+    const options = flattenModules(moduleList)
+    setAvailableParents(options)
   }
 
   const fetchFormRecords = async (formId: string) => {
@@ -140,18 +183,26 @@ export default function HomePage() {
 
     try {
       setIsSubmitting(true)
+      const createData = {
+        name: moduleData.name,
+        description: moduleData.description,
+        parentId: moduleData.parentId || undefined,
+        icon: moduleData.icon || undefined,
+        color: moduleData.color || undefined,
+      }
+
       const response = await fetch("/api/modules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(moduleData),
+        body: JSON.stringify(createData),
       })
 
       const data = await response.json()
 
       if (data.success) {
-        setModules([data.data, ...modules])
+        await fetchModules() // Refresh the entire tree
         setIsCreateDialogOpen(false)
-        setModuleData({ name: "", description: "" })
+        setModuleData({ name: "", description: "", parentId: "", icon: "", color: "" })
         toast({
           title: "Success",
           description: "Module created successfully!",
@@ -183,19 +234,27 @@ export default function HomePage() {
 
     try {
       setIsSubmitting(true)
+      const updateData = {
+        name: moduleData.name,
+        description: moduleData.description,
+        parentId: moduleData.parentId || undefined,
+        icon: moduleData.icon || undefined,
+        color: moduleData.color || undefined,
+      }
+
       const response = await fetch(`/api/modules/${editingModule.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(moduleData),
+        body: JSON.stringify(updateData),
       })
 
       const data = await response.json()
 
       if (data.success) {
-        setModules(modules.map((m) => (m.id === editingModule.id ? data.data : m)))
+        await fetchModules() // Refresh the entire tree
         setIsEditDialogOpen(false)
         setEditingModule(null)
-        setModuleData({ name: "", description: "" })
+        setModuleData({ name: "", description: "", parentId: "", icon: "", color: "" })
         toast({
           title: "Success",
           description: "Module updated successfully!",
@@ -228,7 +287,7 @@ export default function HomePage() {
       const data = await response.json()
 
       if (data.success) {
-        setModules(modules.filter((m) => m.id !== moduleId))
+        await fetchModules() // Refresh the entire tree
         if (selectedModule?.id === moduleId) {
           setSelectedModule(null)
           setSelectedForm(null)
@@ -250,6 +309,76 @@ export default function HomePage() {
     }
   }
 
+  const handleCreateSubmodule = (parentId: string) => {
+    setModuleData({ name: "", description: "", parentId, icon: "", color: "" })
+    setIsCreateDialogOpen(true)
+  }
+
+  const handleMoveModule = async (moduleId: string, newParentId?: string) => {
+    try {
+      const response = await fetch(`/api/modules/${moduleId}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentId: newParentId }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        await fetchModules() // Refresh the entire tree
+        toast({
+          title: "Success",
+          description: "Module moved successfully!",
+        })
+      } else {
+        throw new Error(data.error || "Failed to move module")
+      }
+    } catch (error: any) {
+      console.error("Error moving module:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to move module. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDuplicateModule = async (module: FormModule) => {
+    try {
+      const duplicateData = {
+        name: `${module.name} (Copy)`,
+        description: module.description,
+        parentId: module.parentId,
+        icon: module.icon,
+        color: module.color,
+      }
+
+      const response = await fetch("/api/modules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(duplicateData),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        await fetchModules() // Refresh the entire tree
+        toast({
+          title: "Success",
+          description: "Module duplicated successfully!",
+        })
+      } else {
+        throw new Error(data.error || "Failed to duplicate module")
+      }
+    } catch (error: any) {
+      console.error("Error duplicating module:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate module. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
   const handlePublishForm = async (form: Form) => {
     try {
       const response = await fetch(`/api/forms/${form.id}/publish`, {
@@ -261,18 +390,7 @@ export default function HomePage() {
       const data = await response.json()
 
       if (data.success) {
-        // Update the form in the selected module
-        if (selectedModule) {
-          const updatedModule = {
-            ...selectedModule,
-            forms: selectedModule.forms?.map((f) => (f.id === form.id ? { ...f, isPublished: !f.isPublished } : f)),
-          }
-          setSelectedModule(updatedModule)
-
-          // Update in modules list
-          setModules(modules.map((m) => (m.id === selectedModule.id ? updatedModule : m)))
-        }
-
+        await fetchModules() // Refresh to get updated form status
         toast({
           title: "Success",
           description: `Form ${form.isPublished ? "unpublished" : "published"} successfully!`,
@@ -301,7 +419,13 @@ export default function HomePage() {
 
   const openEditDialog = (module: FormModule) => {
     setEditingModule(module)
-    setModuleData({ name: module.name, description: module.description || "" })
+    setModuleData({
+      name: module.name,
+      description: module.description || "",
+      parentId: module.parentId || "",
+      icon: module.icon || "",
+      color: module.color || ""
+    })
     setIsEditDialogOpen(true)
   }
 
@@ -332,11 +456,23 @@ export default function HomePage() {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-              {module.name}
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                {module.name}
+              </CardTitle>
+              {module.moduleType === "child" && (
+                <Badge variant="outline" className="text-xs">
+                  Submodule
+                </Badge>
+              )}
+            </div>
             {module.description && (
               <CardDescription className="text-sm text-gray-600 mt-1">{module.description}</CardDescription>
+            )}
+            {module.level > 0 && (
+              <p className="text-xs text-gray-500 mt-1">
+                Level {module.level} • Path: {module.path}
+              </p>
             )}
           </div>
           <DropdownMenu>
@@ -350,11 +486,19 @@ export default function HomePage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => handleCreateSubmodule(module.id)}>
+                <FolderPlus className="mr-2 h-4 w-4" />
+                Add Submodule
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => openEditDialog(module)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Module
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDeleteModule(module.id)} className="text-red-600">
+              <DropdownMenuItem
+                onClick={() => handleDeleteModule(module.id)}
+                className="text-red-600"
+                disabled={module.children && module.children.length > 0}
+              >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Module
               </DropdownMenuItem>
@@ -368,6 +512,13 @@ export default function HomePage() {
             <span className="text-gray-600">Forms</span>
             <Badge variant="secondary">{module.forms?.length || 0}</Badge>
           </div>
+
+          {module.children && module.children.length > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Submodules</span>
+              <Badge variant="outline">{module.children.length}</Badge>
+            </div>
+          )}
 
           {module.forms && module.forms.length > 0 && (
             <div className="space-y-2">
@@ -430,13 +581,28 @@ export default function HomePage() {
                 <FileText className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">{module.name}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-gray-900">{module.name}</h3>
+                  {module.moduleType === "child" && (
+                    <Badge variant="outline" className="text-xs">
+                      Submodule
+                    </Badge>
+                  )}
+                </div>
                 {module.description && <p className="text-sm text-gray-600">{module.description}</p>}
+                {module.level > 0 && (
+                  <p className="text-xs text-gray-500">Level {module.level}</p>
+                )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Badge variant="secondary">{module.forms?.length || 0} forms</Badge>
+            <div className="flex gap-2">
+              <Badge variant="secondary">{module.forms?.length || 0} forms</Badge>
+              {module.children && module.children.length > 0 && (
+                <Badge variant="outline">{module.children.length} subs</Badge>
+              )}
+            </div>
             <div className="flex items-center gap-1">
               <Link href={`/modules/${module.id}`}>
                 <Button size="sm">Open</Button>
@@ -448,11 +614,19 @@ export default function HomePage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleCreateSubmodule(module.id)}>
+                    <FolderPlus className="mr-2 h-4 w-4" />
+                    Add Submodule
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openEditDialog(module)}>
                     <Edit className="mr-2 h-4 w-4" />
                     Edit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleDeleteModule(module.id)} className="text-red-600">
+                  <DropdownMenuItem
+                    onClick={() => handleDeleteModule(module.id)}
+                    className="text-red-600"
+                    disabled={module.children && module.children.length > 0}
+                  >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete
                   </DropdownMenuItem>
@@ -465,13 +639,16 @@ export default function HomePage() {
     </Card>
   )
 
-  const renderSidebarView = () => (
+  const renderTreeView = () => (
     <div className="flex h-[calc(100vh-140px)]">
-      {/* Left Sidebar - Modules */}
+      {/* Left Sidebar - Module Tree */}
       <div className="w-80 border-r bg-white">
         <div className="p-4 border-b">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-lg">Modules</h3>
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <TreePine className="h-5 w-5 text-green-600" />
+              Module Tree
+            </h3>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
@@ -484,48 +661,19 @@ export default function HomePage() {
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-4 space-y-3">
-            {modules.map((module) => (
-              <Card
-                key={module.id}
-                className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
-                  selectedModule?.id === module.id ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-gray-50"
-                }`}
-                onClick={() => {
-                  setSelectedModule(module)
-                  setSelectedForm(null)
-                }}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-sm">{module.name}</h4>
-                      <p className="text-xs text-gray-600 mt-1">{module.forms?.length || 0} forms</p>
-                      {module.description && (
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{module.description}</p>
-                      )}
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditDialog(module)}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDeleteModule(module.id)} className="text-red-600">
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="p-4">
+            <EnhancedModuleTree
+              modules={modules}
+              selectedModule={selectedModule}
+              selectedForm={selectedForm}
+              onModuleSelect={setSelectedModule}
+              onFormSelect={setSelectedForm}
+              onCreateSubmodule={handleCreateSubmodule}
+              onEditModule={openEditDialog}
+              onDeleteModule={handleDeleteModule}
+              onMoveModule={handleMoveModule}
+              onDuplicateModule={handleDuplicateModule}
+            />
           </div>
         </ScrollArea>
       </div>
@@ -535,17 +683,37 @@ export default function HomePage() {
         {selectedModule ? (
           <div className="h-full flex flex-col">
             <div className="p-6 bg-white border-b">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="">
+                <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold">{selectedModule.name}</h2>
-                  <p className="text-gray-600 text-sm mt-1">{selectedModule.forms?.length || 0} forms in this module</p>
+                  {selectedModule.moduleType === "child" && (
+                    <Badge variant="outline">Submodule</Badge>
+                  )}
                 </div>
-                <Link href={`/modules/${selectedModule.id}`}>
-                  <Button>
-                    <Settings className="h-4 w-4 mr-2" />
-                    Manage Module
-                  </Button>
-                </Link>
+                <div className="flex items-center justify-center">
+                  <div className="space-y-2 w-1/2">
+                    <p className="text-gray-600 text-sm">{selectedModule.forms?.length || 0} forms in this module</p>
+                    {selectedModule.children && selectedModule.children.length > 0 && (
+                      <p className="text-gray-600 text-sm">{selectedModule.children.length} submodules</p>
+                    )}
+                    {selectedModule.level > 0 && (
+                      <p className="text-gray-500 text-sm">Level {selectedModule.level}</p>
+                    )}
+                  </div>
+
+                  <div className="w-1/2 flex flex-col items-end">
+                    <Button className="mb-2" variant="outline" onClick={() => handleCreateSubmodule(selectedModule.id)}>
+                      <FolderPlus className="h-4 w-4 mr-2" />
+                      Add Submodule
+                    </Button>
+                    <Link href={`/modules/${selectedModule.id}`}>
+                      <Button>
+                        <Settings className="h-4 w-4 mr-2" />
+                        Manage Module
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -556,9 +724,8 @@ export default function HomePage() {
                     {selectedModule.forms.map((form: Form) => (
                       <Card
                         key={form.id}
-                        className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
-                          selectedForm?.id === form.id ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-white"
-                        }`}
+                        className={`cursor-pointer transition-all duration-200 hover:shadow-md ${selectedForm?.id === form.id ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-white"
+                          }`}
                         onClick={() => setSelectedForm(form)}
                       >
                         <CardContent className="p-4">
@@ -625,9 +792,9 @@ export default function HomePage() {
         ) : (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-gray-500">
-              <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <TreePine className="h-12 w-12 mx-auto mb-4 text-gray-300" />
               <h3 className="text-lg font-medium mb-2">Select a Module</h3>
-              <p className="text-sm">Choose a module from the sidebar to view its forms and details.</p>
+              <p className="text-sm">Choose a module from the tree to view its forms and details.</p>
             </div>
           </div>
         )}
@@ -852,12 +1019,16 @@ export default function HomePage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Form Builder</h1>
-              <p className="text-gray-600">Create and manage your forms</p>
+              <h1 className="text-2xl font-bold text-gray-900">ERP SYSTEM</h1>
+              <p className="text-gray-600">Create and manage your forms with hierarchical modules</p>
             </div>
             <div className="flex items-center gap-3">
               <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as any)}>
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="tree" className="flex items-center gap-1">
+                    <TreePine className="h-4 w-4" />
+                    Tree
+                  </TabsTrigger>
                   <TabsTrigger value="grid" className="flex items-center gap-1">
                     <Grid className="h-4 w-4" />
                     Grid
@@ -904,6 +1075,23 @@ export default function HomePage() {
                         rows={3}
                       />
                     </div>
+                    <div>
+                      <Label htmlFor="parentId">Parent Module (Optional)</Label>
+                      <select
+                        id="parentId"
+                        value={moduleData.parentId}
+                        onChange={(e) => setModuleData({ ...moduleData, parentId: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">No Parent (Root Module)</option>
+                        {availableParents.map((parent) => (
+                          <option key={parent.id} value={parent.id}>
+                            {"  ".repeat(parent.level)}
+                            {parent.name} {parent.level > 0 ? `(Level ${parent.level})` : "(Root)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -924,7 +1112,7 @@ export default function HomePage() {
       <div className="container mx-auto px-6 py-8">
         {modules.length === 0 ? (
           <div className="text-center py-12">
-            <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <TreePine className="h-12 w-12 mx-auto mb-4 text-gray-300" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No modules yet</h3>
             <p className="text-gray-600 mb-6">Get started by creating your first module to organize your forms.</p>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -938,13 +1126,14 @@ export default function HomePage() {
           </div>
         ) : (
           <>
+            {viewMode === "tree" && renderTreeView()}
             {viewMode === "grid" && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {modules.map(renderModuleCard)}
               </div>
             )}
             {viewMode === "list" && <div className="space-y-4">{modules.map(renderModuleList)}</div>}
-            {viewMode === "sidebar" && renderSidebarView()}
+            {viewMode === "sidebar" && renderTreeView()}
           </>
         )}
       </div>
@@ -975,6 +1164,25 @@ export default function HomePage() {
                 placeholder="Enter module description"
                 rows={3}
               />
+            </div>
+            <div>
+              <Label htmlFor="edit-parentId">Parent Module (Optional)</Label>
+              <select
+                id="edit-parentId"
+                value={moduleData.parentId}
+                onChange={(e) => setModuleData({ ...moduleData, parentId: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">No Parent (Root Module)</option>
+                {availableParents
+                  .filter(parent => parent.id !== editingModule?.id) // Prevent self-selection
+                  .map((parent) => (
+                    <option key={parent.id} value={parent.id}>
+                      {"  ".repeat(parent.level)}
+                      {parent.name} {parent.level > 0 ? `(Level ${parent.level})` : "(Root)"}
+                    </option>
+                  ))}
+              </select>
             </div>
           </div>
           <DialogFooter>
